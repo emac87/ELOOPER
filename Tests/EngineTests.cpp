@@ -2,6 +2,7 @@
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
 #include "Engine/AudioEngine.h"
+#include "Engine/SessionSerializer.h"
 #include <cstdio>
 #include <vector>
 
@@ -155,6 +156,71 @@ static void testMidiClipDefinesTake() {
     CHECK (c.loopStatus (loop).state == LoopState::Playing);
 }
 
+static void testSaveLoadRoundTrip() {
+    std::printf ("save / load round trip\n");
+    Offline o;
+    auto& c = o.c;
+    c.setMasterBars (1);
+    c.setTempo (100);
+    const Id track = firstTrack (c, TrackKind::Audio);
+    LoopSettings s = c.session().transport.defaultLoopSettings; s.startQuantize = Quantize::None; s.recordMode = RecordMode::TakeFolder;
+    c.setDefaultLoopSettings (s);
+    const Id loop = c.addLoop (track, LoopType::Audio);
+    c.setLoopColour (loop, juce::Colour (0xff123456));
+    c.recordLoop (loop);
+    o.run (2.6);
+    const Id bus = c.addTrack (TrackKind::Bus, "Verb");
+    c.addSend (track, bus, true);
+    c.setParam (track, { ParamKind::Pan, 0, -1 }, 0.25f);
+    c.setParam (track, { ParamKind::EqBand, 0, 3 }, 0.8f);
+    const Id inst = firstTrack (c, TrackKind::Instrument);
+    const Id mloop = c.addLoop (inst, LoopType::Midi);
+    MidiClip clip; clip.lengthBeats = 8; clip.notes.push_back ({ 1, 0.5, 64, 90, 1, false });
+    c.setMidiClip (mloop, clip);
+    AutomationOwner owner { track, loop };
+    const int lane = c.addAutomationLane (owner, { ParamKind::Volume, 0, -1 });
+    AutomationLane l = (*c.automationLanes (owner))[(size_t) lane]; l.setPoint (0, 0.2f); l.setPoint (2, 0.9f);
+    c.setAutomationLane (owner, lane, l);
+    c.addTimelineClip (loop, 4, 8);
+    o.run (0.1);
+    juce::AudioBuffer<float> before; double beats = 0;
+    CHECK (c.exportTakeAudio (loop, 0, before, beats));
+
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("elooper-test.elooper");
+    dir.deleteRecursively();
+    auto r = SessionSerializer::save (c, dir);
+    CHECK (r.wasOk());
+    if (! r.wasOk()) std::printf ("  save error: %s\n", r.getErrorMessage().toRawUTF8());
+
+    Offline o2;
+    bool done = false; juce::Result lr = juce::Result::fail ("not called");
+    SessionSerializer::load (o2.c, dir, [&] (juce::Result res) { done = true; lr = res; });
+    for (int i = 0; i < 50 && ! done; ++i) o2.run (0.02, false);
+    CHECK (done && lr.wasOk());
+    auto& c2 = o2.c;
+    auto t2 = c2.session().findTrack (track);
+    CHECK (t2 != nullptr);
+    if (t2) {
+        CHECK (std::abs (t2->rt->pan.load() - 0.25f) < 1e-4f);
+        CHECK (std::abs (t2->rt->eq[3].load() - 0.8f) < 1e-4f);
+        CHECK (t2->sends.size() == 1 && t2->sends[0].busId == bus && t2->sends[0].preFader);
+    }
+    auto l2 = c2.session().findLoop (loop);
+    CHECK (l2 && l2->colour && *l2->colour == juce::Colour (0xff123456));
+    CHECK (l2 && l2->settings.recordMode == RecordMode::TakeFolder);
+    CHECK (l2 && l2->automation.size() == 1 && l2->automation[0].points.size() == 2);
+    juce::AudioBuffer<float> after; double beats2 = 0;
+    CHECK (c2.exportTakeAudio (loop, 0, after, beats2));
+    CHECK (after.getNumSamples() == before.getNumSamples() && std::abs (beats2 - beats) < 1e-9);
+    if (after.getNumSamples() == before.getNumSamples() && after.getNumSamples() > 1000)
+        CHECK (std::abs (after.getSample (0, 1000) - before.getSample (0, 1000)) < 1e-6f);
+    CHECK (c2.midiClip (mloop) && c2.midiClip (mloop)->notes.size() == 1 && c2.midiClip (mloop)->notes[0].pitch == 64);
+    CHECK (c2.session().timeline.size() == 1);
+    CHECK (std::abs (c2.session().transport.tempo - 100.0) < 1e-6);
+    CHECK (c2.loopStatus (loop).numTakes == 1 && c2.loopStatus (loop).state == LoopState::Stopped);
+    dir.deleteRecursively();
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     testRecordLoopAndAutoMute();
@@ -162,6 +228,7 @@ int main() {
     testBounce();
     testTimeline();
     testMidiClipDefinesTake();
+    testSaveLoadRoundTrip();
     std::printf (failures == 0 ? "engine tests passed\n" : "%d engine check(s) FAILED\n", failures);
     return failures == 0 ? 0 : 1;
 }

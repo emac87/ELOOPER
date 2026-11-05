@@ -3,6 +3,7 @@
 #include "Engine/EngineController.h"
 #include "Engine/MidiMapping.h"
 #include "Engine/PresetManager.h"
+#include "UI/SettingsWindow.h"
 #include "UI/MainComponent.h"
 #include "UI/Theme.h"
 
@@ -23,6 +24,7 @@ public:
 
     void shutdown() override
     {
+        el::closeSettingsWindow();
         window.reset();
         presets.reset();
         midiMapping.reset();

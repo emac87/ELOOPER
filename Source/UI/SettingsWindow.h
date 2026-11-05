@@ -8,5 +8,7 @@
 namespace el {
 
 void showSettingsWindow (EngineController&, MidiMapping&);
+// Closes it now (call before the controller is destroyed, e.g. at shutdown).
+void closeSettingsWindow();
 
 } // namespace el

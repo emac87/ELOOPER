@@ -592,7 +592,7 @@ private:
     EngineController& controller;
 };
 
-class SettingsWindow : public juce::DocumentWindow, private juce::DeletedAtShutdown {
+class SettingsWindow : public juce::DocumentWindow {
 public:
     SettingsWindow (EngineController& c, MidiMapping& m)
         : juce::DocumentWindow ("Settings", theme::background, juce::DocumentWindow::closeButton), controller (c)
@@ -643,6 +643,11 @@ void showSettingsWindow (EngineController& c, MidiMapping& m)
         return;
     }
     instance = new SettingsWindow (c, m);
+}
+
+void closeSettingsWindow()
+{
+    if (instance != nullptr) delete instance.getComponent();
 }
 
 } // namespace el

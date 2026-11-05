@@ -108,7 +108,7 @@ TransportBar::TransportBar (EngineController& c) : controller (c)
         b.setButtonText (pageNames[i]);
         b.setClickingTogglesState (true);
         b.setRadioGroupId (4711);
-        b.onClick = [this, i] { if (onPage) onPage ((Page) i); };
+        b.onClick = [this, i] { setPage ((Page) i); if (onPage) onPage ((Page) i); };
         addAndMakeVisible (b);
     }
     pageButtons[0].setToggleState (true, juce::dontSendNotification);
@@ -135,7 +135,9 @@ TransportBar::~TransportBar() { stopTimer(); }
 
 void TransportBar::setPage (Page p)
 {
-    pageButtons[(int) p].setToggleState (true, juce::dontSendNotification);
+    // Set every button explicitly: radio groups don't untoggle siblings without a notification.
+    for (int i = 0; i < (int) std::size (pageButtons); ++i)
+        pageButtons[i].setToggleState (i == (int) p, juce::dontSendNotification);
 }
 
 void TransportBar::setDockOn (Dock d, bool on)

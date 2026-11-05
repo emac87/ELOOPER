@@ -138,8 +138,14 @@ void AudioEngine::collectMidi (int numSamples) {
         liveMidi[r.device].add (s, r.data, r.size);
     }
     // Keep each device buffer ordered by sample.
+    // Insertion sort: stable, in place, no allocation (std::stable_sort may allocate).
     for (auto& b : liveMidi)
-        std::stable_sort (b.events, b.events + b.count, [] (const TimedMidi& a, const TimedMidi& c) { return a.sample < c.sample; });
+        for (int i = 1; i < b.count; ++i) {
+            const TimedMidi e = b.events[i];
+            int j = i - 1;
+            while (j >= 0 && b.events[j].sample > e.sample) { b.events[j + 1] = b.events[j]; --j; }
+            b.events[j + 1] = e;
+        }
 }
 
 // -----------------------------------------------------------------------------------------
