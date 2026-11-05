@@ -94,7 +94,10 @@ struct LoopIo {
 
 enum class LoopCommandType : uint8_t {
     Trigger, Record, Play, Stop, Overdub, Clear, SelectTake, DeleteTake, SetSettings,
-    RecordAt   // start recording exactly at `beat` for `lengthBeats` (used by bounce)
+    RecordAt,   // start recording exactly at `beat` for `lengthBeats` (used by bounce)
+    DefineTake, // MIDI/automation: make take `take` exist with `lengthBeats` (drawn, not recorded)
+    PlayAt,     // play now, phase 0 at `beat` (timeline mode / bounce handoff), no quantise
+    StopNow     // stop immediately, no quantise
 };
 
 struct LoopCommand {
@@ -153,6 +156,7 @@ public:
     int activeTakeIndex() const noexcept { return activeTake; }
     int takeCount() const noexcept { return numTakes; }
     LoopSettings settingsCopy() const noexcept { return settings; }
+    double anchor() const noexcept { return anchorBeat; }
 
     // Message thread only, while the loop is NOT reachable by the audio thread
     // (before first publish / after load): install audio for a take.
@@ -204,6 +208,7 @@ private:
     float env = 0;                  // click-free start/stop envelope
     float lastGain = 0;
     const MidiSequence* lastSeq = nullptr;
+    bool flushNotes = false;        // send note-offs for held notes at the next process()
     uint64_t heldNotes[16][2] {};   // bitsets of notes this loop has switched on
 };
 

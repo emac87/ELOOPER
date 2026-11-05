@@ -22,6 +22,9 @@ public:
     void requestPlay (bool shouldPlay);
     int numPeers() const;
     void setQuantum (double beatsPerBar);   // bar length in beats, used for phase alignment
+    // Offline rendering (tests, faster than real time): derive host time from the sample
+    // counter instead of the wall clock. Only meaningful while Link is disabled.
+    void setOffline (bool on);
 
     // ---- audio thread ------------------------------------------------------------------
     // Computes musical time for the block about to be rendered. `sampleTime` is a running

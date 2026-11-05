@@ -47,6 +47,17 @@ struct TrackRt {
     std::atomic<float> peakL { 0 }, peakR { 0 }, inputPeak { 0 };
     std::atomic<bool>  inputAudible { true };           // is live input currently monitored (Auto logic result)
     RtPtr<AutomationSet> automation;                    // track (timeline) automation lanes
+    // Parameters the user is currently holding (UI gesture): automation playback leaves them alone.
+    static constexpr int kTouchSlots = 4;
+    std::atomic<uint64_t> touched[kTouchSlots] {};
+    static uint64_t touchKey (const ParamTarget& p) noexcept {
+        return (((uint64_t) p.kind + 1) << 56) | (((uint64_t) p.objectId & 0xffffffu) << 24) | ((uint64_t) (p.index + 1) & 0xffffffu);
+    }
+    bool isTouched (const ParamTarget& p) const noexcept {
+        const auto k = touchKey (p);
+        for (auto& t : touched) if (t.load (std::memory_order_relaxed) == k) return true;
+        return false;
+    }
 };
 using TrackRtPtr = std::shared_ptr<TrackRt>;
 

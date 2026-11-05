@@ -36,10 +36,15 @@ struct TrackNode {
     std::vector<int> auxChildren;         // node indices fed by this node's instrument outputs
     // Per-node scratch, sized at build time.
     juce::AudioBuffer<float> bus;          // summed input for buses / aux tracks (2 ch)
+    juce::AudioBuffer<float> input;        // input signal after input gain (2 ch): what audio loops record
     juce::AudioBuffer<float> work;         // processing buffer (max plugin channels)
     juce::AudioBuffer<float> output;       // final post-fader output (2 ch), read by resamplers
     juce::MidiBuffer midi;
+    juce::MidiBuffer fxMidi;               // scratch for audio-effect plugins
     GraphicEq eq;
+    float smoothMonitor = 1, smoothMute = 1;
+    bool isBusLikeOrAux() const noexcept { return kind == TrackKind::Bus || kind == TrackKind::Master || kind == TrackKind::AuxOut; }
+    bool midiGateOpen = true;
     float smoothVol = 0, smoothPanL = 1, smoothPanR = 1, smoothInGain = 1;
     float smoothSend[kMaxSends] {};
 };
@@ -50,6 +55,7 @@ struct RenderGraph {
     std::vector<TrackNode> nodes;          // processing order (topological)
     std::vector<std::pair<Id, LoopRt*>> loopIndex;   // sorted by id, for command lookup
     std::vector<TimelineEntry> timeline;   // sorted by start
+    std::vector<LoopRt*> timelineLoops;    // unique loops referenced by the timeline
     int masterIndex = -1;
     bool anySolo = false;
     int maxBlock = 0;
@@ -62,7 +68,7 @@ enum class EngineCommandType : uint8_t {
     Loop,             // loop + loopCmd
     Play, Stop,
     Locate,           // beat
-    Bounce,           // sourceTrack -> loop (new loop on new track): resample one cycle
+    Bounce,           // trackId = source; loop = new loop on new track (beat = target track id): resample one cycle
     StopTrackLoops,   // trackId: stop every loop on a track now
     AllLoopsStop
 };
@@ -147,6 +153,7 @@ private:
     std::mutex midiDeviceMutex;            // message thread + MIDI thread only
     BlockMidi liveMidi[8];                 // per input device, this block
     BlockMidi loopMidiScratch;
+    BlockMidi trackMidiScratch;            // live MIDI filtered for the track being processed
 
     std::atomic<double> currentRate { 48000 };
     std::atomic<int> currentBlock { 512 };
@@ -157,6 +164,13 @@ private:
     int64_t sampleClock = 0;
     double metroPhase = 0; int metroRemaining = 0; float metroFreq = 1000;
     juce::AudioBuffer<float> silence;
+
+    struct Bounce { LoopRt* target = nullptr; Id sourceTrack = kInvalidId; Id targetTrack = kInvalidId; bool capturing = false; };
+    Bounce bounces[8];
+    void startBounce (RenderGraph& g, const EngineCommand& c, const BlockTime& t);
+    void updateBounces (RenderGraph& g, const BlockTime& t);
+    bool isBounceSource (Id trackId) const noexcept;
+    TrackNode* findNode (RenderGraph& g, Id id) noexcept;
 };
 
 } // namespace el

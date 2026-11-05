@@ -115,6 +115,7 @@ void LoopRt::command (const LoopCommand& c, const BlockTime& t, const LoopContex
             for (int i = 0; i < numTakes; ++i) takes[i].release (*ctx.pool);
             numTakes = 0; activeTake = 0; tailTake = -1; tailRemaining = 0;
             state = LoopState::Empty; pending = PendingAction::None; env = 0;
+            flushNotes = true;
             break;
         case LoopCommandType::SelectTake:
             if (c.take >= 0 && c.take < numTakes && state != LoopState::Recording) activeTake = c.take;
@@ -124,6 +125,27 @@ void LoopRt::command (const LoopCommand& c, const BlockTime& t, const LoopContex
             break;
         case LoopCommandType::SetSettings:
             settings = c.settings;
+            break;
+        case LoopCommandType::DefineTake:
+            if (type == LoopType::Audio || c.take < 0 || c.take >= kMaxTakes || c.lengthBeats <= 0) break;
+            if (state == LoopState::Recording && c.take == recordTake) break;
+            takes[c.take].lengthBeats = c.lengthBeats;
+            takes[c.take].hasContent = true;
+            numTakes = std::max (numTakes, c.take + 1);
+            if (state == LoopState::Empty) state = LoopState::Stopped;
+            break;
+        case LoopCommandType::PlayAt:
+            if (numTakes == 0 || state == LoopState::Recording) break;
+            if (state != LoopState::Playing && state != LoopState::Overdubbing) env = 0;
+            if (state != LoopState::Overdubbing) state = LoopState::Playing;
+            anchorBeat = c.beat;
+            pending = PendingAction::None;
+            break;
+        case LoopCommandType::StopNow:
+            if (state == LoopState::Recording) { abortRecording (ctx); break; }
+            if (state == LoopState::Playing || state == LoopState::Overdubbing) state = LoopState::Stopped;
+            pending = PendingAction::None;
+            flushNotes = true;
             break;
     }
     publish (now);
@@ -248,6 +270,7 @@ void LoopRt::applyPending (double beat, int sampleInBlock, const BlockTime& t, c
 }
 
 void LoopRt::process (const BlockTime& t, LoopIo& io, const LoopContext& ctx) noexcept {
+    if (flushNotes && io.midiOut != nullptr) { allNotesOff (io.midiOut, 0); flushNotes = false; }
     if (! t.playing || t.numSamples <= 0) { publish (t.beatStart); return; }
 
     int pos = 0;

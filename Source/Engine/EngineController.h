@@ -200,6 +200,9 @@ public:
     void setArrangementRecord (bool on);
     bool isArrangementRecording() const noexcept { return arrangementRecord; }
 
+    // Drains engine notifications now (normally done by a 30 Hz timer). Offline renders / tests.
+    void processPendingEvents() { tick(); }
+
     // ---- MIDI input --------------------------------------------------------------------
     // Called by MidiMapping for every incoming message (message thread) before mapping.
     std::function<void (const juce::MidiMessage&, const juce::String& deviceId)> onMidiInput;
@@ -215,6 +218,29 @@ private:
     juce::ListenerList<Listener> listeners;
     bool arrangementRecord = false;
     void notify (Change c, Id id = kInvalidId);
+
+    // internals (EngineController.cpp)
+    int maxBlock() const;
+    std::shared_ptr<LoopRt> makeLoopRt (Id loopId, Id trackId, LoopType type);
+    void rebuildGraph();
+    void publishTransport();
+    void deviceChanged();
+    void retireSession (std::unique_ptr<Session> old);
+    TrackPtr makeTrack (TrackKind kind, const juce::String& name, Id forcedId = kInvalidId);
+    void removeSendInternal (TrackModel& t, int index);
+    void recordAutomation();
+    void recordArrangement();
+    void preparePlugin (PluginSlot& slot, std::unique_ptr<juce::AudioPluginInstance> inst);
+    std::vector<PluginSlotPtr>* chainOf (TrackModel& t, FxChain c);
+    void placeSlot (TrackModel& t, FxChain chain, int index, PluginSlotPtr slot);
+    void sendLoop (LoopModel& l, const LoopCommand& c);
+    void loopAction (Id loopId, LoopCommandType type);
+    void publishMidiTake (LoopModel& l, int take);
+    void publishLoopAutomation (LoopModel& l);
+    std::vector<AutomationLane>* lanesOf (const AutomationOwner& o) const;
+    void publishLanes (const AutomationOwner& o);
+    void finishBounce (Id loopId);
+    void tick();
 };
 
 } // namespace el
