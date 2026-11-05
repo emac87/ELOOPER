@@ -16,9 +16,13 @@ endif()
 if(ELOOPER_LINK_DIR)
     set(_link_dir ${ELOOPER_LINK_DIR})
 else()
+    # Pinned commit; SOURCE_SUBDIR points nowhere so Link's own CMakeLists isn't added
+    # (we only need AbletonLinkConfig.cmake).
     FetchContent_Declare(abletonlink GIT_REPOSITORY https://github.com/Ableton/link.git
-                                     GIT_TAG master GIT_SHALLOW TRUE GIT_SUBMODULES modules/asio-standalone)
-    FetchContent_Populate(abletonlink)
+                                     GIT_TAG 5ba907ae027a8c2ec8824463e37296dcefc5e9be
+                                     GIT_SUBMODULES modules/asio-standalone
+                                     SOURCE_SUBDIR _none_)
+    FetchContent_MakeAvailable(abletonlink)
     set(_link_dir ${abletonlink_SOURCE_DIR})
 endif()
 include(${_link_dir}/AbletonLinkConfig.cmake)
