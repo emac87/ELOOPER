@@ -1,4 +1,5 @@
 #include "GraphicEq.h"
+#include <algorithm>
 #include <cmath>
 
 namespace el {
