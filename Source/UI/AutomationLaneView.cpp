@@ -137,15 +137,15 @@ void AutomationLaneView::paint (juce::Graphics& g)
             const float x = beatToX (pt.beat), y = valueToY (pt.value);
             const bool sel = isSelected (i) || i == dragIndex;
             g.setColour (sel ? juce::Colours::white : c);
-            g.fillEllipse (x - 3.5f, y - 3.5f, 7.0f, 7.0f);
+            g.fillEllipse (x - 5.0f, y - 5.0f, 10.0f, 10.0f);
             g.setColour (juce::Colours::black);
-            g.drawEllipse (x - 3.5f, y - 3.5f, 7.0f, 7.0f, 1.0f);
+            g.drawEllipse (x - 5.0f, y - 5.0f, 10.0f, 10.0f, 1.0f);
         }
     }
     else
     {
         g.setColour (theme::textDim.withAlpha (0.6f));
-        g.setFont (theme::font (11.0f));
+        g.setFont (theme::font (14.0f));
         g.drawText ("Click to add points", getLocalBounds(), juce::Justification::centred);
     }
 

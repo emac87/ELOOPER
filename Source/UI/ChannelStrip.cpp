@@ -45,7 +45,7 @@ public:
         textFromValueFunction = std::move (fmt);
         if (textBelow)
         {
-            setTextBoxStyle (juce::Slider::TextBoxBelow, false, 76, 13);
+            setTextBoxStyle (juce::Slider::TextBoxBelow, false, 88, 18);
             setTextBoxIsEditable (false);
             setColour (juce::Slider::textBoxTextColourId, theme::textDim);
             setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
@@ -95,9 +95,9 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.setColour (theme::textDim);
-        g.setFont (theme::font (9.0f, true));
+        g.setFont (theme::font (13.0f, true));
         for (auto& t : titles)
-            g.drawText (t.text, kMargin + 2, t.y, getWidth() - 2 * kMargin, 11, juce::Justification::centredLeft);
+            g.drawText (t.text, kMargin + 2, t.y, getWidth() - 2 * kMargin, 17, juce::Justification::centredLeft);
     }
 };
 
@@ -122,16 +122,16 @@ public:
         g.setColour (isMouseOver() ? theme::outline : theme::panelRaised);
         g.fillRoundedRectangle (b, 3.0f);
         const bool hasLed = slot && chain != FxChain::Instrument;
-        auto textArea = getLocalBounds().withTrimmedLeft (5).withTrimmedRight (hasLed ? 17 : 5);
+        auto textArea = getLocalBounds().withTrimmedLeft (5).withTrimmedRight (hasLed ? 22 : 5);
         if (! slot)
         {
             g.setColour (theme::textDim);
-            g.setFont (theme::font (11.0f));
+            g.setFont (theme::font (14.0f));
             g.drawText ("+ Instrument", textArea, juce::Justification::centredLeft);
             return;
         }
         g.setColour (slot->instance == nullptr ? theme::record : (lastBypass ? theme::textDim : theme::text));
-        g.setFont (theme::font (11.0f));
+        g.setFont (theme::font (14.0f));
         g.drawFittedText (slot->name(), textArea, juce::Justification::centredLeft, 1);
         if (hasLed)
         {
@@ -160,7 +160,7 @@ public:
     }
 
 private:
-    juce::Rectangle<int> ledBounds() const { return { getWidth() - 14, (getHeight() - 8) / 2, 8, 8 }; }
+    juce::Rectangle<int> ledBounds() const { return { getWidth() - 17, (getHeight() - 11) / 2, 11, 11 }; }
     ChannelStrip& strip;
     FxChain chain;
     int index;
@@ -198,14 +198,16 @@ public:
     void resized() override
     {
         auto b = getLocalBounds();
-        prePostButton.setBounds (b.removeFromRight (28).reduced (0, 4));
-        knob.setBounds (b.removeFromRight (26).reduced (1));
+        b.removeFromTop (20);
+        knob.setBounds (b.removeFromLeft (36).reduced (1));
+        b.removeFromLeft (4);
+        prePostButton.setBounds (b.reduced (0, 3));
     }
     void paint (juce::Graphics& g) override
     {
         g.setColour (theme::textDim);
-        g.setFont (theme::font (10.0f));
-        g.drawFittedText (busName, 2, 0, getWidth() - 56, getHeight(), juce::Justification::centredLeft, 1);
+        g.setFont (theme::font (13.0f));
+        g.drawFittedText (busName, 2, 0, getWidth() - 4, 20, juce::Justification::centredLeft, 1);
     }
     void mouseUp (const juce::MouseEvent& e) override
     {
@@ -236,7 +238,7 @@ ChannelStrip::ChannelStrip (EngineController& c, Id id)
 
     nameLabel.setEditable (false, true, false);
     nameLabel.setJustificationType (juce::Justification::centred);
-    nameLabel.setFont (theme::font (12.0f, true));
+    nameLabel.setFont (theme::font (16.0f, true));
     nameLabel.onTextChange = [this]
     {
         const auto n = nameLabel.getText().trim();
@@ -252,7 +254,7 @@ ChannelStrip::ChannelStrip (EngineController& c, Id id)
     if (panKnob) addAndMakeVisible (*panKnob);
     addAndMakeVisible (*fader);
     dbLabel.setJustificationType (juce::Justification::centred);
-    dbLabel.setFont (theme::font (11.0f));
+    dbLabel.setFont (theme::font (14.0f));
     dbLabel.setColour (juce::Label::textColourId, theme::text);
     dbLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (dbLabel);
@@ -324,21 +326,21 @@ void ChannelStrip::resized()
 {
     auto b = getLocalBounds().reduced (kMargin, 0);
     b.removeFromBottom (5);
-    nameLabel.setBounds (b.removeFromTop (22).reduced (0, 2));
-    outputButton.setBounds (b.removeFromBottom (24).reduced (0, 2));
-    if (monitorButton.isVisible()) monitorButton.setBounds (b.removeFromBottom (22).reduced (0, 2));
-    auto ms = b.removeFromBottom (24).reduced (0, 2);
+    nameLabel.setBounds (b.removeFromTop (30).reduced (0, 2));
+    outputButton.setBounds (b.removeFromBottom (34).reduced (0, 2));
+    if (monitorButton.isVisible()) monitorButton.setBounds (b.removeFromBottom (34).reduced (0, 2));
+    auto ms = b.removeFromBottom (34).reduced (0, 2);
     muteButton.setBounds (soloButton.isVisible() ? ms.removeFromLeft (ms.getWidth() / 2 - 2) : ms);
     if (soloButton.isVisible()) { ms.removeFromLeft (4); soloButton.setBounds (ms); }
 
-    const int panH = panKnob ? 56 : 0;
+    const int panH = panKnob ? 76 : 0;
     const int fh = juce::jlimit (90, 230, b.getHeight() - 22 - panH - 170);
     faderArea = b.removeFromBottom (fh);
-    dbLabel.setBounds (b.removeFromBottom (16));
+    dbLabel.setBounds (b.removeFromBottom (22));
     if (panKnob) panKnob->setBounds (b.removeFromBottom (panH));
-    fader->setBounds (faderArea.removeFromLeft (34));
+    fader->setBounds (faderArea.removeFromLeft (40));
     faderArea.removeFromLeft (4);
-    meter.setBounds (faderArea.removeFromLeft (24).reduced (0, 4));
+    meter.setBounds (faderArea.removeFromLeft (28).reduced (0, 4));
     viewport.setBounds (getLocalBounds().withTop (b.getY()).withBottom (b.getBottom()));
 }
 
@@ -423,7 +425,7 @@ void ChannelStrip::buildContent (const TrackModel& t)
     int y = 2;
 
     auto add = [this] (auto comp) { auto* raw = comp.get(); content->addAndMakeVisible (*raw); owned.push_back (std::move (comp)); return raw; };
-    auto title = [&] (const juce::String& s) { content->titles.push_back ({ s, y }); y += 12; };
+    auto title = [&] (const juce::String& s) { content->titles.push_back ({ s, y }); y += 18; };
     auto addButton = [&] (const juce::String& text, std::function<void (juce::Component*)> fn)
     {
         auto b = std::make_unique<juce::TextButton> (text);
@@ -431,8 +433,8 @@ void ChannelStrip::buildContent (const TrackModel& t)
         b->setColour (juce::TextButton::buttonColourId, theme::background);
         b->setColour (juce::TextButton::textColourOffId, theme::textDim);
         b->onClick = [raw, fn] { fn (raw); };
-        add (std::move (b))->setBounds (kMargin, y, rw, 16);
-        y += 20;
+        add (std::move (b))->setBounds (kMargin, y, rw, 28);
+        y += 32;
         return raw;
     };
     auto slotList = [&] (const juce::String& heading, FxChain chain, const std::vector<PluginSlotPtr>& list)
@@ -441,9 +443,9 @@ void ChannelStrip::buildContent (const TrackModel& t)
         for (int i = 0; i < (int) list.size(); ++i)
         {
             auto* row = add (std::make_unique<StripSlotRow> (*this, chain, i, list[(size_t) i]));
-            row->setBounds (kMargin, y, rw, 20);
+            row->setBounds (kMargin, y, rw, 28);
             slotRows.push_back (row);
-            y += 22;
+            y += 31;
         }
         addButton ("+", [this, chain] (juce::Component* c) { addPluginMenu (chain, c); });
     };
@@ -454,16 +456,16 @@ void ChannelStrip::buildContent (const TrackModel& t)
         inputKnob = add (std::make_unique<StripKnob> (controller, trackId, ParamTarget { ParamKind::InputGain, kInvalidId, -1 }, 0.5f,
                                                       [] (double n) { return "In " + signedDb (pm::inputGainToDb ((float) n)); },
                                                       juce::Slider::RotaryVerticalDrag, true));
-        inputKnob->setBounds (kMargin, y, rw, 52);
-        y += 54;
+        inputKnob->setBounds (kMargin, y, rw, 76);
+        y += 80;
     }
     if (t.kind == TrackKind::Instrument)
     {
         title ("INSTRUMENT");
         auto* row = add (std::make_unique<StripSlotRow> (*this, FxChain::Instrument, 0, t.instrument));
-        row->setBounds (kMargin, y, rw, 22);
+        row->setBounds (kMargin, y, rw, 28);
         slotRows.push_back (row);
-        y += 26;
+        y += 32;
         slotList ("MIDI FX", FxChain::MidiFx, t.midiFx);
     }
     slotList ("PRE FADER", FxChain::Pre, t.preFx);
@@ -473,8 +475,8 @@ void ChannelStrip::buildContent (const TrackModel& t)
         auto thumb = std::make_unique<GraphicEqEditor> (controller, trackId, true);
         thumb->onClick = [this] { openEqEditor(); };
         eqThumb = add (std::move (thumb));
-        eqThumb->setBounds (kMargin, y, rw, 34);
-        y += 37;
+        eqThumb->setBounds (kMargin, y, rw, 48);
+        y += 52;
         auto tb = std::make_unique<juce::TextButton> ("EQ On");
         eqToggle = tb.get();
         tb->setClickingTogglesState (true);
@@ -484,8 +486,8 @@ void ChannelStrip::buildContent (const TrackModel& t)
         {
             if (auto tr = track(); tr && tr->rt) tr->rt->eqEnabled.store (eqToggle->getToggleState());
         };
-        add (std::move (tb))->setBounds (kMargin, y, rw, 16);
-        y += 20;
+        add (std::move (tb))->setBounds (kMargin, y, rw, 28);
+        y += 32;
     }
 
     if (! isMaster)
@@ -495,9 +497,9 @@ void ChannelStrip::buildContent (const TrackModel& t)
         {
             auto bus = controller.session().findTrack (t.sends[(size_t) i].busId);
             auto* row = add (std::make_unique<StripSendRow> (*this, i, t.sends[(size_t) i], bus ? bus->name : juce::String ("?")));
-            row->setBounds (kMargin, y, rw, 26);
+            row->setBounds (kMargin, y, rw, 56);
             sendRows.push_back (row);
-            y += 28;
+            y += 60;
         }
         addButton ("+ Send", [this] (juce::Component* c) { showAddSendMenu (c); });
     }
@@ -682,7 +684,7 @@ void ChannelStrip::openEqEditor()
 {
     if (eqThumb == nullptr) return;
     auto ed = std::make_unique<GraphicEqEditor> (controller, trackId, false);
-    ed->setSize (380, 220);
+    ed->setSize (520, 300);
     juce::CallOutBox::launchAsynchronously (std::move (ed), eqThumb->getScreenBounds(), nullptr);
 }
 

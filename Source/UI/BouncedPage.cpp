@@ -37,17 +37,17 @@ public:
         g.setColour (colour);
         g.fillRoundedRectangle (b.getX() + 8.0f, b.getY() + 8.0f, 6.0f, b.getHeight() - 16.0f, 3.0f);
         g.setColour (theme::text);
-        g.setFont (theme::font (15.0f, true));
-        g.drawText (name, juce::Rectangle<int> (30, 8, getWidth() - 240, 20), juce::Justification::centredLeft, true);
+        g.setFont (theme::font (19.0f, true));
+        g.drawText (name, juce::Rectangle<int> (30, 8, getWidth() - 270, 26), juce::Justification::centredLeft, true);
         g.setColour (theme::textDim);
-        g.setFont (theme::font (12.0f));
-        g.drawText (info, juce::Rectangle<int> (30, 30, getWidth() - 240, 18), juce::Justification::centredLeft, true);
+        g.setFont (theme::font (15.0f));
+        g.drawText (info, juce::Rectangle<int> (30, 38, getWidth() - 270, 22), juce::Justification::centredLeft, true);
     }
 
     void resized() override
     {
-        remove.setBounds (getWidth() - 80, 15, 68, 26);
-        restore.setBounds (getWidth() - 160, 15, 72, 26);
+        remove.setBounds (getWidth() - 96, 14, 84, 36);
+        restore.setBounds (getWidth() - 190, 14, 88, 36);
     }
 
 private:
@@ -96,7 +96,7 @@ void BouncedPage::paint (juce::Graphics& g)
     g.fillAll (theme::background);
     if (rows.isEmpty()) {
         g.setColour (theme::textDim);
-        g.setFont (theme::font (16.0f));
+        g.setFont (theme::font (18.0f));
         g.drawText ("Bounced tracks appear here.", getLocalBounds(), juce::Justification::centred);
     }
 }
@@ -106,7 +106,7 @@ void BouncedPage::resized()
     viewport.setBounds (getLocalBounds());
     const int w = juce::jmax (300, viewport.getMaximumVisibleWidth() - 24);
     int y = 12;
-    for (auto* r : rows) { r->setBounds (12, y, w, 56); y += 62; }
+    for (auto* r : rows) { r->setBounds (12, y, w, 64); y += 70; }
     content.setSize (w + 24, juce::jmax (y + 12, viewport.getMaximumVisibleHeight()));
 }
 

@@ -295,10 +295,10 @@ void StepSequencer::paint (juce::Graphics& g)
         {
             auto rc = cellRect (velRow, velStep);
             g.setColour (juce::Colours::black.withAlpha (0.8f));
-            g.fillRoundedRectangle (rc.translated (0, -rowH).withHeight (20).withWidth (juce::jmax (34.0f, rc.getWidth())), 3.0f);
+            g.fillRoundedRectangle (rc.translated (0, -rowH).withHeight (26).withWidth (juce::jmax (44.0f, rc.getWidth())), 3.0f);
             g.setColour (theme::text);
-            g.setFont (theme::font (12.0f, true));
-            g.drawText (juce::String (velNow), rc.translated (0, -rowH).withHeight (20).withWidth (juce::jmax (34.0f, rc.getWidth())).toNearestInt(),
+            g.setFont (theme::font (15.0f, true));
+            g.drawText (juce::String (velNow), rc.translated (0, -rowH).withHeight (26).withWidth (juce::jmax (44.0f, rc.getWidth())).toNearestInt(),
                         juce::Justification::centred);
         }
     }
@@ -308,12 +308,12 @@ void StepSequencer::paint (juce::Graphics& g)
         juce::Graphics::ScopedSaveState ss (g);
         g.reduceClipRegion (juce::Rectangle<int> (headerW, 0, area.getWidth(), rulerH));
         g.fillAll (theme::panelRaised);
-        g.setFont (theme::font (10.0f));
+        g.setFont (theme::font (13.0f));
         for (int s = firstStep; s <= lastStep; ++s)
         {
             if (s % 4 != 0) continue;
             g.setColour (theme::textDim);
-            g.drawText (juce::String (s / 4 + 1), (int) (headerW + s * cellW - scrollX) + 3, 0, 30, rulerH, juce::Justification::centredLeft);
+            g.drawText (juce::String (s / 4 + 1), (int) (headerW + s * cellW - scrollX) + 3, 0, 40, rulerH, juce::Justification::centredLeft);
         }
     }
 
@@ -331,7 +331,7 @@ void StepSequencer::paint (juce::Graphics& g)
                 g.setColour (theme::panelRaised);
                 g.fillRoundedRectangle (6.0f, y + 2.0f, headerW - 12.0f, rowH - 4.0f, 4.0f);
                 g.setColour (theme::accent);
-                g.setFont (theme::font (12.0f, true));
+                g.setFont (theme::font (15.0f, true));
                 g.drawText ("+ Add row", 6, (int) y + 2, headerW - 12, rowH - 4, juce::Justification::centred);
                 break;
             }
@@ -340,19 +340,19 @@ void StepSequencer::paint (juce::Graphics& g)
             g.setColour (theme::panelRaised);
             g.fillRoundedRectangle (4.0f, y + 1.0f, headerW - 8.0f, rowH - 2.0f, 4.0f);
             g.setColour (muted ? theme::textDim : theme::text);
-            g.setFont (theme::font (12.0f, true));
-            g.drawText (rowName (pitch), 10, (int) y, headerW - 100, rowH, juce::Justification::centredLeft, true);
+            g.setFont (theme::font (15.0f, true));
+            g.drawText (rowName (pitch), 10, (int) y, headerW - 142, rowH, juce::Justification::centredLeft, true);
             g.setColour (theme::textDim);
-            g.setFont (theme::font (10.0f));
-            g.drawText (midiNoteName (pitch), headerW - 88, (int) y, 34, rowH, juce::Justification::centredRight);
+            g.setFont (theme::font (13.0f));
+            g.drawText (midiNoteName (pitch), headerW - 128, (int) y, 48, rowH, juce::Justification::centredRight);
             // mute + remove buttons
-            auto mb = juce::Rectangle<float> (headerW - 50.0f, y + 5.0f, 20.0f, rowH - 10.0f);
+            auto mb = juce::Rectangle<float> (headerW - 76.0f, y + 4.0f, 32.0f, rowH - 8.0f);
             g.setColour (muted ? theme::overdub : theme::outline);
             g.fillRoundedRectangle (mb, 3.0f);
             g.setColour (muted ? juce::Colours::black : theme::textDim);
-            g.setFont (theme::font (10.0f, true));
+            g.setFont (theme::font (14.0f, true));
             g.drawText ("M", mb.toNearestInt(), juce::Justification::centred);
-            auto xb = juce::Rectangle<float> (headerW - 26.0f, y + 5.0f, 20.0f, rowH - 10.0f);
+            auto xb = juce::Rectangle<float> (headerW - 40.0f, y + 4.0f, 32.0f, rowH - 8.0f);
             g.setColour (theme::outline);
             g.fillRoundedRectangle (xb, 3.0f);
             g.setColour (theme::textDim);
@@ -377,8 +377,8 @@ void StepSequencer::mouseDown (const juce::MouseEvent& e)
         if (r == (int) rows.size()) { showAddRowMenu(); return; }
         if (r < 0 || r >= (int) rows.size()) return;
         const int pitch = rows[(size_t) r];
-        if (p.x >= headerW - 50 && p.x < headerW - 28) toggleRowMute (pitch);
-        else if (p.x >= headerW - 26 && p.x < headerW - 4) removeRow (pitch);
+        if (p.x >= headerW - 76 && p.x < headerW - 42) toggleRowMute (pitch);
+        else if (p.x >= headerW - 40 && p.x < headerW - 6) removeRow (pitch);
         return;
     }
 

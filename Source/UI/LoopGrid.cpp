@@ -9,9 +9,9 @@ namespace {
     constexpr int colWidth = theme::stripWidth;
     constexpr int colGap = 10;
     constexpr int cellStep = theme::loopCellSize + 4;
-    constexpr int addAreaH = 52;
+    constexpr int addAreaH = 112;
     constexpr int pad = 14;
-    constexpr int addColWidth = 96;
+    constexpr int addColWidth = 104;
 }
 
 // ---- one track column -----------------------------------------------------------------------
@@ -52,11 +52,11 @@ public:
         header.setBounds (0, 0, colWidth, TrackHeader::headerHeight);
         int y = TrackHeader::headerHeight + 8;
         for (auto* c : cells) { c->setTopLeftPosition ((colWidth - theme::loopCellSize) / 2, y); y += cellStep; }
-        plusButton.setBounds (4, y, colWidth - 8, 26);
-        const int w = (colWidth - 8 - 6) / 3;
-        addAudio.setBounds (4, y + 30, w, 20);
-        addMidi.setBounds (4 + w + 3, y + 30, w, 20);
-        addAuto.setBounds (4 + (w + 3) * 2, y + 30, w, 20);
+        plusButton.setBounds (4, y, colWidth - 8, 34);
+        const int w = (colWidth - 8 - 4) / 2;
+        addAudio.setBounds (4, y + 38, w, 32);
+        addMidi.setBounds (4 + w + 4, y + 38, w, 32);
+        addAuto.setBounds (4, y + 74, colWidth - 8, 32);
     }
 
     void refreshAll()

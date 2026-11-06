@@ -11,7 +11,7 @@ public:
     explicit ScanContent (std::function<void()> onCancel)
         : bar (progress), cancelCallback (std::move (onCancel))
     {
-        label.setFont (theme::font (13.0f));
+        label.setFont (theme::font (16.0f));
         label.setColour (juce::Label::textColourId, theme::text);
         label.setText ("Preparing...", juce::dontSendNotification);
         label.setMinimumHorizontalScale (1.0f);
@@ -22,7 +22,7 @@ public:
         addAndMakeVisible (label);
         addAndMakeVisible (bar);
         addAndMakeVisible (cancel);
-        setSize (420, 130);
+        setSize (540, 170);
     }
 
     void update (float p, const juce::String& current)
@@ -37,11 +37,11 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().reduced (16);
-        label.setBounds (r.removeFromTop (24));
+        label.setBounds (r.removeFromTop (30));
         r.removeFromTop (8);
-        bar.setBounds (r.removeFromTop (22));
+        bar.setBounds (r.removeFromTop (28));
         r.removeFromTop (12);
-        cancel.setBounds (r.removeFromTop (28).withSizeKeepingCentre (90, 28));
+        cancel.setBounds (r.removeFromTop (36).withSizeKeepingCentre (120, 36));
     }
 
 private:

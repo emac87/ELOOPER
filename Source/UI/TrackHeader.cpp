@@ -63,17 +63,17 @@ void TrackHeader::refresh()
 
 void TrackHeader::resized()
 {
-    const int bw = 17, gap = 3, y = 66, h = 18;
+    const int bw = 30, gap = 4, y = 86, h = 28;
     const bool full = kind == TrackKind::Audio || kind == TrackKind::Instrument;
-    const int total = full ? bw * 3 + 30 + gap * 3 : bw * 2 + gap;
+    const int total = full ? bw * 3 + gap * 2 : bw * 2 + gap;
     int x = (getWidth() - total) / 2;
     muteR = { x, y, bw, h }; x += bw + gap;
     soloR = { x, y, bw, h }; x += bw + gap;
     if (full) {
-        armR = { x, y, bw, h }; x += bw + gap;
-        monR = { x, y, 30, h };
+        armR = { x, y, bw, h };
+        monR = { 6, y + h + 4, getWidth() - 12, h };
     } else { armR = {}; monR = {}; }
-    meterR = { 6, 90, getWidth() - 12, 6 };
+    meterR = { 6, headerHeight - 12, getWidth() - 12, 7 };
 }
 
 TrackHeader::Button TrackHeader::buttonAt (juce::Point<int> p) const
@@ -117,15 +117,15 @@ void TrackHeader::paint (juce::Graphics& g)
     g.drawRoundedRectangle (b, 7.0f, sel ? 1.5f : 1.0f);
 
     g.setColour (theme::text);
-    g.setFont (theme::font (13.0f, true));
-    g.drawText (nameText, 6, 11, getWidth() - 12, 16, juce::Justification::centredLeft, true);
+    g.setFont (theme::font (16.0f, true));
+    g.drawText (nameText, 6, 10, getWidth() - 12, 20, juce::Justification::centredLeft, true);
     g.setColour (colour.withAlpha (0.9f));
-    g.setFont (theme::font (9.5f, true));
-    g.drawText (kindText, 6, 27, getWidth() - 12, 11, juce::Justification::centredLeft, true);
+    g.setFont (theme::font (13.0f, true));
+    g.drawText (kindText, 6, 30, getWidth() - 12, 16, juce::Justification::centredLeft, true);
     g.setColour (theme::textDim);
-    g.setFont (theme::font (10.0f));
-    g.drawText (line1, 6, 38, getWidth() - 12, 12, juce::Justification::centredLeft, true);
-    g.drawText (line2, 6, 50, getWidth() - 12, 12, juce::Justification::centredLeft, true);
+    g.setFont (theme::font (13.0f));
+    g.drawText (line1, 6, 46, getWidth() - 12, 16, juce::Justification::centredLeft, true);
+    g.drawText (line2, 6, 62, getWidth() - 12, 16, juce::Justification::centredLeft, true);
 
     auto drawBtn = [&] (juce::Rectangle<int> r, const juce::String& label, bool on, juce::Colour onCol) {
         if (r.isEmpty()) return;
@@ -135,7 +135,7 @@ void TrackHeader::paint (juce::Graphics& g)
         g.setColour (on ? onCol.brighter (0.3f) : theme::outline);
         g.drawRoundedRectangle (rf, 4.0f, 1.0f);
         g.setColour (on ? juce::Colours::black : theme::textDim.brighter (0.3f));
-        g.setFont (theme::font (10.0f, true));
+        g.setFont (theme::font (14.0f, true));
         g.drawText (label, r, juce::Justification::centred);
     };
     drawBtn (muteR, "M", muted, theme::overdub);
@@ -143,7 +143,7 @@ void TrackHeader::paint (juce::Graphics& g)
     if (! armR.isEmpty()) {
         drawBtn (armR, "", armed, theme::record);
         g.setColour (armed ? juce::Colours::white : theme::record.withAlpha (0.7f));
-        g.fillEllipse (armR.toFloat().getCentre().x - 3.5f, armR.toFloat().getCentre().y - 3.5f, 7.0f, 7.0f);
+        g.fillEllipse (armR.toFloat().getCentre().x - 6.0f, armR.toFloat().getCentre().y - 6.0f, 12.0f, 12.0f);
         drawBtn (monR, monitorName (monitor), monitor == MonitorMode::On, theme::accent);
     }
 
@@ -154,10 +154,10 @@ void TrackHeader::paint (juce::Graphics& g)
     auto bar = [&] (float y, int v) {
         const float w = mr.getWidth() * (float) v / 40.0f;
         g.setColour (v > 36 ? theme::meterHigh : v > 28 ? theme::meterMid : theme::meterLow);
-        g.fillRect (mr.getX(), y, w, 2.5f);
+        g.fillRect (mr.getX(), y, w, 3.0f);
     };
     bar (mr.getY(), meterL);
-    bar (mr.getY() + 3.0f, meterR2);
+    bar (mr.getY() + 4.0f, meterR2);
 }
 
 void TrackHeader::mouseDown (const juce::MouseEvent& e)

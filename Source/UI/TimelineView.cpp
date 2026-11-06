@@ -4,7 +4,7 @@
 namespace el {
 
 namespace {
-constexpr int kBar = 28, kRuler = 22, kHeader = 120, kRow = 56;
+constexpr int kBar = 42, kRuler = 30, kHeader = 150, kRow = 72;
 }
 
 TimelineView::TimelineView (EngineController& c, Selection& s) : controller (c), selection (s)
@@ -46,13 +46,13 @@ void TimelineView::sessionChanged (Change what, Id)
 void TimelineView::resized()
 {
     auto b = getLocalBounds().removeFromTop (kBar).reduced (4, 3);
-    recordButton.setBounds (b.removeFromLeft (150));
-    followButton.setBounds (b.removeFromLeft (70));
-    loopButton.setBounds (b.removeFromLeft (100));
+    recordButton.setBounds (b.removeFromLeft (180));
+    followButton.setBounds (b.removeFromLeft (90));
+    loopButton.setBounds (b.removeFromLeft (120));
     b.removeFromLeft (8);
-    zoomOut.setBounds (b.removeFromLeft (28));
+    zoomOut.setBounds (b.removeFromLeft (38));
     b.removeFromLeft (2);
-    zoomIn.setBounds (b.removeFromLeft (28));
+    zoomIn.setBounds (b.removeFromLeft (38));
 }
 
 // ---- geometry ----------------------------------------------------------------------------
@@ -149,7 +149,7 @@ void TimelineView::drawClip (juce::Graphics& g, const TimelineClip& c, juce::Rec
                 int lo = 127, hi = 0;
                 for (auto& n : clip->notes) { lo = std::min (lo, (int) n.pitch); hi = std::max (hi, (int) n.pitch); }
                 const float span = (float) std::max (8, hi - lo + 1);
-                const float nh = std::max (1.5f, (r.getHeight() - 16.0f) / span);
+                const float nh = std::max (1.5f, (r.getHeight() - 24.0f) / span);
                 g.setColour (col.brighter (0.4f));
                 for (double off = 0; off < len; off += clip->lengthBeats)
                 {
@@ -160,7 +160,7 @@ void TimelineView::drawClip (juce::Graphics& g, const TimelineClip& c, juce::Rec
                         if (s >= len) continue;
                         const float x = r.getX() + (float) (s * pxPerBeat);
                         const float w = std::max (1.5f, (float) (std::min (n.length, len - s) * pxPerBeat));
-                        const float y = r.getBottom() - 4.0f - (float) (n.pitch - lo + 1) * (r.getHeight() - 16.0f) / span;
+                        const float y = r.getBottom() - 4.0f - (float) (n.pitch - lo + 1) * (r.getHeight() - 24.0f) / span;
                         g.fillRect (x, y, w, nh);
                     }
                 }
@@ -180,8 +180,8 @@ void TimelineView::drawClip (juce::Graphics& g, const TimelineClip& c, juce::Rec
             g.drawVerticalLine ((int) (r.getX() + off * pxPerBeat), r.getY(), r.getBottom());
     }
     g.setColour (juce::Colours::white.withAlpha (0.92f));
-    g.setFont (theme::font (11.0f, true));
-    g.drawText (loop != nullptr ? loop->name : "?", r.toNearestInt().reduced (5, 2).withHeight (14),
+    g.setFont (theme::font (14.0f, true));
+    g.drawText (loop != nullptr ? loop->name : "?", r.toNearestInt().reduced (5, 2).withHeight (19),
                 juce::Justification::centredLeft, true);
     g.restoreState();
 
@@ -208,16 +208,16 @@ void TimelineView::paint (juce::Graphics& g)
         g.reduceClipRegion (ruler);
         const double barPx = pxPerBeat * bpb;
         int step = 1;
-        while (barPx * step < 44.0) step *= 2;
+        while (barPx * step < 56.0) step *= 2;
         const int firstBar = std::max (0, (int) std::floor (scrollBeat / bpb));
-        g.setFont (theme::font (11.0f));
+        g.setFont (theme::font (13.0f));
         for (int b = firstBar; b * (double) bpb <= endBeat; ++b)
         {
             const float x = beatToX (b * (double) bpb);
             const bool lab = (b % step) == 0;
             g.setColour (lab ? theme::textDim : theme::outline);
-            g.drawVerticalLine ((int) x, (float) (lab ? ruler.getY() + 4 : ruler.getY() + 14), (float) ruler.getBottom());
-            if (lab) { g.setColour (theme::text); g.drawText (juce::String (b + 1), (int) x + 3, ruler.getY(), 40, kRuler, juce::Justification::centredLeft); }
+            g.drawVerticalLine ((int) x, (float) (lab ? ruler.getY() + 5 : ruler.getY() + 20), (float) ruler.getBottom());
+            if (lab) { g.setColour (theme::text); g.drawText (juce::String (b + 1), (int) x + 4, ruler.getY(), 48, kRuler, juce::Justification::centredLeft); }
         }
         g.restoreState();
     }
@@ -303,8 +303,8 @@ void TimelineView::paint (juce::Graphics& g)
         g.setColour (t.id == selection.trackId ? theme::panelRaised : theme::panel);
         g.fillRect (4, y, kHeader - 4, kRow - 1);
         g.setColour (theme::text);
-        g.setFont (theme::font (12.0f, true));
-        g.drawText (t.name, 10, y, kHeader - 14, kRow, juce::Justification::centredLeft, true);
+        g.setFont (theme::font (15.0f, true));
+        g.drawText (t.name, 12, y, kHeader - 18, kRow, juce::Justification::centredLeft, true);
         g.setColour (theme::outline);
         g.drawHorizontalLine (y + kRow - 1, 0.0f, (float) kHeader);
     }

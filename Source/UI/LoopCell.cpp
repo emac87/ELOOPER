@@ -5,7 +5,7 @@
 namespace el {
 
 namespace {
-    constexpr float ringRadius = 25.0f, ringThickness = 4.5f, ringCentreY = 43.0f;
+    constexpr float ringRadius = 27.0f, ringThickness = 5.0f, ringCentreY = 48.0f;
 
     void buildGlyph (juce::Path& p, LoopType t, juce::Rectangle<float> r)
     {
@@ -51,8 +51,8 @@ void LoopCell::resized()
 {
     const auto b = getLocalBounds().toFloat();
     const float cx = b.getCentreX();
-    buildGlyph (glyph, type, { cx - 12.0f, ringCentreY - 10.0f, 24.0f, 20.0f });
-    buildGlyph (smallGlyph, type, { 8.0f, 7.0f, 12.0f, 9.0f });
+    buildGlyph (glyph, type, { cx - 13.0f, ringCentreY - 11.0f, 26.0f, 22.0f });
+    buildGlyph (smallGlyph, type, { 6.0f, 6.0f, 13.0f, 10.0f });
 }
 
 void LoopCell::refresh()
@@ -153,8 +153,8 @@ void LoopCell::paint (juce::Graphics& g)
     // centre content
     if (status.state == LoopState::Empty) {
         g.setColour (theme::textDim);
-        g.setFont (theme::font (13.0f, true));
-        g.drawText ("REC", juce::Rectangle<float> (cx - 24.0f, ringCentreY - 9.0f, 48.0f, 18.0f), juce::Justification::centred);
+        g.setFont (theme::font (15.0f, true));
+        g.drawText ("REC", juce::Rectangle<float> (cx - 26.0f, ringCentreY - 10.0f, 52.0f, 20.0f), juce::Justification::centred);
     } else {
         g.setColour (ink);
         g.fillPath (glyph);
@@ -163,16 +163,16 @@ void LoopCell::paint (juce::Graphics& g)
     // corner info
     g.setColour (ink.withAlpha (0.8f));
     g.fillPath (smallGlyph);
-    g.setFont (theme::font (10.0f));
+    g.setFont (theme::font (13.0f));
     if (lenText.isNotEmpty())
-        g.drawText (lenText, juce::Rectangle<float> (22.0f, 4.0f, 34.0f, 14.0f), juce::Justification::centredLeft, false);
+        g.drawText (lenText, juce::Rectangle<float> (22.0f, 3.0f, 40.0f, 17.0f), juce::Justification::centredLeft, false);
     if (takeText.isNotEmpty()) {
         g.setColour (theme::armed);
-        g.drawText (takeText, juce::Rectangle<float> (b.getRight() - 34.0f, 4.0f, 32.0f, 14.0f), juce::Justification::centredRight, false);
+        g.drawText (takeText, juce::Rectangle<float> (b.getRight() - 36.0f, 3.0f, 34.0f, 17.0f), juce::Justification::centredRight, false);
     }
     g.setColour (ink);
-    g.setFont (theme::font (10.5f, true));
-    g.drawText (nameText, juce::Rectangle<float> (b.getX() + 4.0f, b.getBottom() - 17.0f, b.getWidth() - 8.0f, 14.0f),
+    g.setFont (theme::font (14.0f, true));
+    g.drawText (nameText, juce::Rectangle<float> (b.getX() + 3.0f, b.getBottom() - 19.0f, b.getWidth() - 6.0f, 17.0f),
                 juce::Justification::centred, true);
 
     if (status.pending != PendingAction::None && blink) {

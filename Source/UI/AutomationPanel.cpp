@@ -6,7 +6,7 @@
 namespace el {
 
 namespace {
-constexpr int kRowHeight = 70, kHeaderWidth = 140, kTopBar = 30;
+constexpr int kRowHeight = 96, kHeaderWidth = 190, kTopBar = 44;
 
 juce::String formatValue (const ParamTarget& t, float v)
 {
@@ -42,10 +42,10 @@ public:
         : panel (p), controller (c), owner (o), index (idx), view (c, o, idx)
     {
         nameLabel.setText (name, juce::dontSendNotification);
-        nameLabel.setFont (theme::font (12.0f, true));
+        nameLabel.setFont (theme::font (16.0f, true));
         nameLabel.setColour (juce::Label::textColourId, theme::text);
         nameLabel.setMinimumHorizontalScale (0.7f);
-        valueLabel.setFont (theme::font (11.0f));
+        valueLabel.setFont (theme::font (14.0f));
         valueLabel.setColour (juce::Label::textColourId, theme::textDim);
         enable.setButtonText ("On");
         enable.onClick = [this] { modify ([this] (AutomationLane& l) { l.enabled = enable.getToggleState(); }); };
@@ -69,15 +69,15 @@ public:
 
     void resized() override
     {
-        auto h = getLocalBounds().removeFromLeft (kHeaderWidth).reduced (4, 3);
-        nameLabel.setBounds (h.removeFromTop (18));
-        valueLabel.setBounds (h.removeFromTop (16));
-        h.removeFromTop (2);
-        auto row = h.removeFromTop (22);
-        enable.setBounds (row.removeFromLeft (44));
-        row.removeFromLeft (2);
-        remove.setBounds (row.removeFromRight (24));
-        row.removeFromRight (2);
+        auto h = getLocalBounds().removeFromLeft (kHeaderWidth).reduced (6, 4);
+        nameLabel.setBounds (h.removeFromTop (24));
+        valueLabel.setBounds (h.removeFromTop (20));
+        h.removeFromTop (4);
+        auto row = h.removeFromTop (32);
+        enable.setBounds (row.removeFromLeft (52));
+        row.removeFromLeft (4);
+        remove.setBounds (row.removeFromRight (36));
+        row.removeFromRight (4);
         clear.setBounds (row);
         view.setBounds (getLocalBounds().withTrimmedLeft (kHeaderWidth));
     }
@@ -293,15 +293,15 @@ void AutomationPanel::layoutRows()
 void AutomationPanel::resized()
 {
     auto b = getLocalBounds();
-    auto top = b.removeFromTop (kTopBar).reduced (4, 3);
-    addLaneButton.setBounds (top.removeFromRight (70));
+    auto top = b.removeFromTop (kTopBar).reduced (4, 4);
+    addLaneButton.setBounds (top.removeFromRight (96));
     top.removeFromRight (6);
-    pencilButton.setBounds (top.removeFromRight (70));
+    pencilButton.setBounds (top.removeFromRight (90));
     top.removeFromRight (6);
     if (trackLanesButton.isVisible())
     {
-        trackLanesButton.setBounds (top.removeFromRight (84));
-        loopLayerButton.setBounds (top.removeFromRight (84));
+        trackLanesButton.setBounds (top.removeFromRight (110));
+        loopLayerButton.setBounds (top.removeFromRight (110));
     }
     viewport.setBounds (b);
     layoutRows();
@@ -312,7 +312,7 @@ void AutomationPanel::paint (juce::Graphics& g)
     g.fillAll (theme::panel);
     g.setColour (titleColour);
     g.fillRect (0, 0, 3, kTopBar);
-    g.setFont (theme::font (13.0f, true));
+    g.setFont (theme::font (17.0f, true));
     g.setColour (ownerValid ? titleColour : theme::textDim);
     int right = addLaneButton.getX();
     if (loopLayerButton.isVisible()) right = loopLayerButton.getX();
@@ -322,7 +322,7 @@ void AutomationPanel::paint (juce::Graphics& g)
     if (container->rows.empty())
     {
         g.setColour (theme::textDim);
-        g.setFont (theme::font (12.0f));
+        g.setFont (theme::font (15.0f));
         g.drawFittedText (ownerValid
             ? "Automation is recorded into a loop's layer whenever you move a control on its channel while that loop is recording or overdubbing."
             : "Select a track or a loop to edit its automation.",

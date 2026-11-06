@@ -44,10 +44,12 @@ MidiEditor::MidiEditor (EngineController& c, Selection& s) : controller (c), sel
     addAndMakeVisible (lenMinus);
     addAndMakeVisible (lenPlus);
     lenLabel.setJustificationType (juce::Justification::centred);
+    lenLabel.setFont (theme::font (15.0f));
     lenLabel.setColour (juce::Label::textColourId, theme::text);
     addAndMakeVisible (lenLabel);
 
     velLabel.setText ("Vel", juce::dontSendNotification);
+    velLabel.setFont (theme::font (14.0f));
     velLabel.setColour (juce::Label::textColourId, theme::textDim);
     addAndMakeVisible (velLabel);
     velSlider.setSliderStyle (juce::Slider::LinearBar);
@@ -97,7 +99,7 @@ void MidiEditor::paint (juce::Graphics& g)
     if (loopId == kInvalidId)
     {
         g.setColour (theme::textDim);
-        g.setFont (theme::font (15.0f));
+        g.setFont (theme::font (18.0f));
         g.drawText ("Select a MIDI loop", getLocalBounds(), juce::Justification::centred);
         return;
     }
@@ -108,37 +110,37 @@ void MidiEditor::paint (juce::Graphics& g)
     if (auto lp = controller.session().findLoop (loopId))
     {
         g.setColour (controller.loopColour (loopId));
-        g.setFont (theme::font (14.0f, true));
-        g.drawText (lp->name.isNotEmpty() ? lp->name : "MIDI loop", 10, 0, 130, headerH, juce::Justification::centredLeft, true);
+        g.setFont (theme::font (17.0f, true));
+        g.drawText (lp->name.isNotEmpty() ? lp->name : "MIDI loop", 10, 0, 134, headerH, juce::Justification::centredLeft, true);
     }
     g.setColour (theme::textDim);
-    g.setFont (theme::font (11.0f));
-    g.drawText ("Length", lenMinus.getX() - 46, 0, 44, headerH, juce::Justification::centredRight);
+    g.setFont (theme::font (13.0f));
+    g.drawText ("Length", lenMinus.getX() - 56, 0, 54, headerH, juce::Justification::centredRight);
 }
 
 void MidiEditor::resized()
 {
     auto r = getLocalBounds();
     auto h = r.removeFromTop (headerH).reduced (4, 4);
-    h.removeFromLeft (140);
-    pianoTab.setBounds (h.removeFromLeft (84));
-    stepTab.setBounds (h.removeFromLeft (84));
+    h.removeFromLeft (150);
+    pianoTab.setBounds (h.removeFromLeft (90));
+    stepTab.setBounds (h.removeFromLeft (90));
     h.removeFromLeft (10);
-    gridBox.setBounds (h.removeFromLeft (64));
+    gridBox.setBounds (h.removeFromLeft (76));
     h.removeFromLeft (4);
-    tripletToggle.setBounds (h.removeFromLeft (70));
-    snapToggle.setBounds (h.removeFromLeft (60));
-    quantizeButton.setBounds (h.removeFromLeft (76));
-    h.removeFromLeft (52);
-    lenMinus.setBounds (h.removeFromLeft (24));
-    lenLabel.setBounds (h.removeFromLeft (64));
-    lenPlus.setBounds (h.removeFromLeft (24));
+    tripletToggle.setBounds (h.removeFromLeft (80));
+    snapToggle.setBounds (h.removeFromLeft (70));
+    quantizeButton.setBounds (h.removeFromLeft (96));
+    h.removeFromLeft (60);
+    lenMinus.setBounds (h.removeFromLeft (34));
+    lenLabel.setBounds (h.removeFromLeft (70));
+    lenPlus.setBounds (h.removeFromLeft (34));
     h.removeFromLeft (10);
-    velLabel.setBounds (h.removeFromLeft (28));
-    velSlider.setBounds (h.removeFromLeft (110));
+    velLabel.setBounds (h.removeFromLeft (38));
+    velSlider.setBounds (h.removeFromLeft (120));
     h.removeFromLeft (10);
-    zoomOut.setBounds (h.removeFromLeft (24));
-    zoomIn.setBounds (h.removeFromLeft (24));
+    zoomOut.setBounds (h.removeFromLeft (34));
+    zoomIn.setBounds (h.removeFromLeft (34));
     piano.setBounds (r);
     steps.setBounds (r);
 }

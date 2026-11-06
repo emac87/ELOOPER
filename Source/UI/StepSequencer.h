@@ -36,7 +36,7 @@ public:
 
 private:
     enum class Mode { None, Paint, Erase, Velocity };
-    static constexpr int headerW = 170, rulerH = 18, rowH = 28;
+    static constexpr int headerW = 260, rulerH = 26, rowH = 34;
 
     MidiClip* clip = nullptr;
     std::vector<int> rows;               // pitches, high to low

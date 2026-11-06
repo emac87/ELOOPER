@@ -22,7 +22,7 @@ public:
     bool keyPressed (const juce::KeyPress&) override;
 
 private:
-    static constexpr int headerH = 34;
+    static constexpr int headerH = 44;
 
     void sessionChanged (Change what, Id id) override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;

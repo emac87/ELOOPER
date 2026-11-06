@@ -4,7 +4,7 @@
 namespace el {
 
 namespace {
-    constexpr int swatchSize = 26, swatchGap = 6, cols = 6, pad = 10, customH = 24;
+    constexpr int swatchSize = 36, swatchGap = 8, cols = 6, pad = 12, customH = 34;
 
     class CustomContent : public juce::Component, private juce::ChangeListener {
     public:
@@ -15,7 +15,7 @@ namespace {
             selector.setCurrentColour (c.withAlpha (1.0f));
             selector.addChangeListener (this);
             addAndMakeVisible (selector);
-            setSize (280, 300);
+            setSize (340, 380);
         }
         ~CustomContent() override { selector.removeChangeListener (this); }
         void resized() override { selector.setBounds (getLocalBounds()); }
@@ -68,7 +68,7 @@ void ColourPicker::paint (juce::Graphics& g)
     g.setColour (hover == numSwatches ? theme::outline.brighter (0.3f) : theme::outline);
     g.fillRoundedRectangle (cr, 5.0f);
     g.setColour (theme::text);
-    g.setFont (theme::font (13.0f));
+    g.setFont (theme::font (15.0f));
     g.drawText ("Custom...", customBounds(), juce::Justification::centred);
 }
 

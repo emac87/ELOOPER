@@ -49,7 +49,7 @@ public:
 private:
     enum class Mode { None, Key, Move, Resize, Rubber, Velocity };
 
-    static constexpr int kbW = 58, rulerH = 18, velH = 60;
+    static constexpr int kbW = 72, rulerH = 26, velH = 84;
 
     MidiClip* clip = nullptr;
     std::vector<char> sel;
@@ -59,7 +59,7 @@ private:
     bool snap = true;
     int newVelocity = 100;
 
-    float ppb = 60.0f, keyH = 14.0f;
+    float ppb = 60.0f, keyH = 20.0f;
     float scrollX = 0, scrollY = 0;
     bool centred = false;
 

@@ -221,10 +221,10 @@ void PianoRoll::paintKeyboard (juce::Graphics& g)
         }
         g.setColour (juce::Colour (0xff3a3a40));
         g.fillRect (0.0f, y + keyH - 1.0f, (float) kbW, 1.0f);
-        if (p % 12 == 0 && keyH >= 9.0f)
+        if (p % 12 == 0 && keyH >= 14.0f)
         {
             g.setColour (juce::Colours::black.withAlpha (0.75f));
-            g.setFont (theme::font (juce::jmin (11.0f, keyH - 2.0f)));
+            g.setFont (theme::font (juce::jmin (13.0f, keyH - 1.0f)));
             g.drawText (midiNoteName (p), 0, (int) y, kbW - 4, (int) keyH, juce::Justification::centredRight);
         }
     }
@@ -236,17 +236,17 @@ void PianoRoll::paintRuler (juce::Graphics& g)
     g.reduceClipRegion (juce::Rectangle<int> (kbW, 0, juce::jmax (0, getWidth() - kbW), rulerH));
     g.fillAll (theme::panelRaised);
     const double b0 = xToBeat ((float) kbW), b1 = xToBeat ((float) getWidth());
-    g.setFont (theme::font (10.0f));
+    g.setFont (theme::font (13.0f));
     for (int b = juce::jmax (0, (int) std::floor (b0)); b <= (int) std::ceil (b1); ++b)
     {
         const bool bar = b % beatsPerBar == 0;
         const float x = beatToX (b);
         g.setColour (bar ? theme::textDim : theme::outline);
-        g.fillRect (x, bar ? 2.0f : (float) rulerH - 6.0f, 1.0f, bar ? (float) rulerH - 2.0f : 6.0f);
+        g.fillRect (x, bar ? 2.0f : (float) rulerH - 8.0f, 1.0f, bar ? (float) rulerH - 2.0f : 8.0f);
         if (bar && ppb * beatsPerBar >= 24.0f)
         {
             g.setColour (theme::text);
-            g.drawText (juce::String (b / beatsPerBar + 1), (int) x + 3, 0, 40, rulerH - 4, juce::Justification::centredLeft);
+            g.drawText (juce::String (b / beatsPerBar + 1), (int) x + 4, 0, 44, rulerH - 3, juce::Justification::centredLeft);
         }
     }
 }
@@ -525,7 +525,7 @@ void PianoRoll::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWhee
     else if (e.mods.isAltDown())
     {
         const float pitchAt = (float) (127.0 - (e.position.y - rulerH + scrollY) / keyH);
-        keyH = juce::jlimit (6.0f, 40.0f, keyH * (1.0f + w.deltaY * 0.6f));
+        keyH = juce::jlimit (10.0f, 48.0f, keyH * (1.0f + w.deltaY * 0.6f));
         scrollY = (127.0f - pitchAt) * keyH - (e.position.y - rulerH);
     }
     else if (e.mods.isShiftDown())

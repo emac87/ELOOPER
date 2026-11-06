@@ -11,7 +11,7 @@ namespace el {
 
 class TrackHeader : public juce::Component {
 public:
-    static constexpr int headerHeight = 100;
+    static constexpr int headerHeight = 160;
 
     TrackHeader (EngineController&, Selection&, PresetManager&, Id trackId);
 

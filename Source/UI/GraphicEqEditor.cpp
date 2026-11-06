@@ -51,7 +51,7 @@ GraphicEqEditor::GraphicEqEditor (EngineController& c, Id track, bool compactMod
             auto& l = labels[i];
             l.setText (kBandNames[i], juce::dontSendNotification);
             l.setJustificationType (juce::Justification::centred);
-            l.setFont (theme::font (10.0f));
+            l.setFont (theme::font (13.0f));
             l.setColour (juce::Label::textColourId, theme::textDim);
             l.setInterceptsMouseClicks (false, false);
             addAndMakeVisible (l);
@@ -159,14 +159,14 @@ void GraphicEqEditor::resized()
     else
     {
         b.reduce (8, 8);
-        auto top = b.removeFromTop (22);
-        flatButton.setBounds (top.removeFromRight (56));
+        auto top = b.removeFromTop (32);
+        flatButton.setBounds (top.removeFromRight (72));
         top.removeFromRight (6);
-        enableButton.setBounds (top.removeFromRight (64));
+        enableButton.setBounds (top.removeFromRight (84));
         b.removeFromTop (6);
-        curveArea = b.removeFromTop (72).toFloat();
+        curveArea = b.removeFromTop (100).toFloat();
         b.removeFromTop (6);
-        auto labelRow = b.removeFromBottom (14);
+        auto labelRow = b.removeFromBottom (20);
         const int cw = b.getWidth() / kEqBands;
         for (int i = 0; i < kEqBands; ++i)
         {

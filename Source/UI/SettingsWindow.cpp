@@ -4,7 +4,7 @@
 namespace el {
 namespace {
 
-void styleLabel (juce::Label& l, const juce::String& text, bool dim = false, float h = 14.0f)
+void styleLabel (juce::Label& l, const juce::String& text, bool dim = false, float h = 17.0f)
 {
     l.setText (text, juce::dontSendNotification);
     l.setFont (theme::font (h));
@@ -63,7 +63,7 @@ public:
 
         offsetSlider.setRange (-2048, 2048, 1);
         offsetSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-        offsetSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 70, 22);
+        offsetSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 84, 28);
         offsetSlider.setValue (controller.session().transport.recordLatencyOffset, juce::dontSendNotification);
         offsetSlider.setDoubleClickReturnValue (true, 0);
         styleSlider (offsetSlider);
@@ -71,7 +71,7 @@ public:
         addAndMakeVisible (offsetSlider);
 
         styleLabel (help, "Recorded loops are shifted earlier by the measured round-trip latency so they line up "
-                          "with what you heard. Use the offset to fine-tune.", true, 13.0f);
+                          "with what you heard. Use the offset to fine-tune.", true, 15.0f);
         help.setJustificationType (juce::Justification::topLeft);
         addAndMakeVisible (help);
 
@@ -82,12 +82,12 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().reduced (12);
-        auto bottom = r.removeFromBottom (130);
+        auto bottom = r.removeFromBottom (170);
         selector.setBounds (r);
-        latencyLabel.setBounds (bottom.removeFromTop (24));
+        latencyLabel.setBounds (bottom.removeFromTop (30));
         bottom.removeFromTop (6);
-        offsetLabel.setBounds (bottom.removeFromTop (22));
-        offsetSlider.setBounds (bottom.removeFromTop (28));
+        offsetLabel.setBounds (bottom.removeFromTop (28));
+        offsetSlider.setBounds (bottom.removeFromTop (34));
         bottom.removeFromTop (6);
         help.setBounds (bottom);
     }
@@ -119,7 +119,7 @@ class MidiTab : public juce::Component, private juce::Timer {
 public:
     explicit MidiTab (EngineController& c) : controller (c)
     {
-        styleLabel (title, "MIDI input devices", false, 16.0f);
+        styleLabel (title, "MIDI input devices", false, 20.0f);
         addAndMakeVisible (title);
         styleLabel (empty, "No MIDI input devices found.", true);
         addAndMakeVisible (empty);
@@ -130,11 +130,11 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().reduced (16);
-        title.setBounds (r.removeFromTop (28));
+        title.setBounds (r.removeFromTop (34));
         r.removeFromTop (8);
-        empty.setBounds (r.removeFromTop (24));
+        empty.setBounds (r.removeFromTop (30));
         for (auto& t : toggles)
-            t->setBounds (r.removeFromTop (30));
+            t->setBounds (r.removeFromTop (36));
     }
 
 private:
@@ -185,13 +185,13 @@ public:
     ControllersTab (EngineController& c, MidiMapping& m) : controller (c), mapping (m)
     {
         list.setModel (this);
-        list.setRowHeight (30);
+        list.setRowHeight (38);
         list.setColour (juce::ListBox::backgroundColourId, theme::panel);
         list.setColour (juce::ListBox::outlineColourId, theme::outline);
         list.setOutlineThickness (1);
         addAndMakeVisible (list);
 
-        styleLabel (header, "Mappings", false, 16.0f);
+        styleLabel (header, "Mappings", false, 20.0f);
         addAndMakeVisible (header);
 
         styleButton (clearBtn);
@@ -229,7 +229,7 @@ public:
         addAndMakeVisible (status);
 
         styleLabel (tip, "Global actions can be learned here; per-loop triggers can be learned from a loop's "
-                         "right-click menu.", true, 13.0f);
+                         "right-click menu.", true, 15.0f);
         tip.setJustificationType (juce::Justification::topLeft);
         addAndMakeVisible (tip);
 
@@ -245,18 +245,18 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().reduced (16);
-        auto top = r.removeFromTop (28);
-        clearBtn.setBounds (top.removeFromRight (90));
+        auto top = r.removeFromTop (36);
+        clearBtn.setBounds (top.removeFromRight (110));
         header.setBounds (top);
         r.removeFromTop (6);
-        auto bottom = r.removeFromBottom (110);
+        auto bottom = r.removeFromBottom (140);
         list.setBounds (r);
         bottom.removeFromTop (8);
-        auto row = bottom.removeFromTop (30);
+        auto row = bottom.removeFromTop (36);
         const int w = row.getWidth() / 4;
         for (auto& b : learnButtons) b.setBounds (row.removeFromLeft (w).reduced (2, 0));
         bottom.removeFromTop (6);
-        status.setBounds (bottom.removeFromTop (22));
+        status.setBounds (bottom.removeFromTop (28));
         tip.setBounds (bottom);
     }
 
@@ -271,13 +271,13 @@ private:
         g.fillRect (0, 0, w, h);
         auto& m = mapping.mappings()[(size_t) row];
         auto dev = m.deviceId.isEmpty() ? juce::String ("Any") : deviceName (m.deviceId);
-        g.setFont (theme::font (13.0f));
+        g.setFont (theme::font (16.0f));
         g.setColour (theme::text);
-        g.drawText (m.description, 8, 0, w - 420, h, juce::Justification::centredLeft, true);
+        g.drawText (m.description, 8, 0, w - 450, h, juce::Justification::centredLeft, true);
         g.setColour (theme::textDim);
-        g.drawText (dev, w - 412, 0, 110, h, juce::Justification::centredLeft, true);
-        g.drawText ("Ch " + juce::String (m.channel), w - 298, 0, 44, h, juce::Justification::centredLeft);
-        g.drawText ((m.isCC ? "CC " : "Note ") + juce::String (m.number), w - 250, 0, 70, h, juce::Justification::centredLeft);
+        g.drawText (dev, w - 440, 0, 140, h, juce::Justification::centredLeft, true);
+        g.drawText ("Ch " + juce::String (m.channel), w - 296, 0, 56, h, juce::Justification::centredLeft);
+        g.drawText ((m.isCC ? "CC " : "Note ") + juce::String (m.number), w - 236, 0, 90, h, juce::Justification::centredLeft);
     }
 
     juce::Component* refreshComponentForRow (int row, bool, juce::Component* existing) override
@@ -297,7 +297,7 @@ private:
     // Transparent row overlay: only the Remove button at the right edge is interactive.
     struct RowButton : juce::Component {
         RowButton() { addAndMakeVisible (button); button.setButtonText ("Remove"); setInterceptsMouseClicks (false, true); }
-        void resized() override { button.setBounds (getLocalBounds().removeFromRight (80).reduced (2, 3)); }
+        void resized() override { button.setBounds (getLocalBounds().removeFromRight (100).reduced (2, 4)); }
         juce::TextButton button;
     };
 
@@ -362,7 +362,7 @@ public:
           pluginList (c.pluginHost().formats(), c.pluginHost().knownPlugins(),
                       PluginHost::appDataDir().getChildFile ("scan-deadmanspedal.txt"), nullptr)
     {
-        styleLabel (countLabel, {}, false, 15.0f);
+        styleLabel (countLabel, {}, false, 18.0f);
         addAndMakeVisible (countLabel);
         styleButton (scanBtn);
         scanBtn.setButtonText ("Scan for Plug-ins");
@@ -372,7 +372,7 @@ public:
         cancelBtn.setButtonText ("Cancel");
         cancelBtn.onClick = [this] { controller.pluginHost().cancelScan(); };
         addChildComponent (cancelBtn);
-        styleLabel (progressText, {}, true, 13.0f);
+        styleLabel (progressText, {}, true, 15.0f);
         addChildComponent (progressText);
         addChildComponent (progressBar);
         addAndMakeVisible (pluginList);
@@ -391,14 +391,14 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().reduced (16);
-        auto top = r.removeFromTop (30);
-        cancelBtn.setBounds (top.removeFromRight (80));
+        auto top = r.removeFromTop (38);
+        cancelBtn.setBounds (top.removeFromRight (100));
         top.removeFromRight (6);
-        scanBtn.setBounds (top.removeFromRight (140));
+        scanBtn.setBounds (top.removeFromRight (170));
         countLabel.setBounds (top);
         r.removeFromTop (6);
-        auto prog = r.removeFromTop (22);
-        progressBar.setBounds (prog.removeFromRight (180));
+        auto prog = r.removeFromTop (28);
+        progressBar.setBounds (prog.removeFromRight (220));
         progressText.setBounds (prog);
         r.removeFromTop (8);
         pluginList.setBounds (r);
@@ -514,7 +514,7 @@ public:
         };
         updateEnablement();
 
-        styleLabel (note, "These settings apply to newly created loops.", true, 13.0f);
+        styleLabel (note, "These settings apply to newly created loops.", true, 15.0f);
         addAndMakeVisible (note);
     }
 
@@ -523,12 +523,12 @@ public:
         auto r = getLocalBounds().reduced (16);
         for (auto& row : rows)
         {
-            auto line = r.removeFromTop (34);
-            row.label->setBounds (line.removeFromLeft (170));
+            auto line = r.removeFromTop (44);
+            row.label->setBounds (line.removeFromLeft (230));
             row.comp->setBounds (line.reduced (0, 3));
         }
         r.removeFromTop (10);
-        note.setBounds (r.removeFromTop (22));
+        note.setBounds (r.removeFromTop (28));
     }
 
 private:
@@ -543,7 +543,7 @@ private:
     void addRow (juce::Slider& s, const juce::String& name)
     {
         s.setSliderStyle (juce::Slider::LinearHorizontal);
-        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 60, 22);
+        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 76, 28);
         styleSlider (s);
         addRowImpl (s, name);
     }
@@ -600,7 +600,7 @@ public:
         setUsingNativeTitleBar (true);
         setBackgroundColour (theme::background);
         auto tabs = std::make_unique<SettingsTabs> (c);
-        tabs->setTabBarDepth (32);
+        tabs->setTabBarDepth (44);
         tabs->setOutline (0);
         const auto bg = theme::background;
         tabs->addTab ("Audio", bg, new AudioTab (c), true);
@@ -608,10 +608,10 @@ public:
         tabs->addTab ("Controllers", bg, new ControllersTab (c, m), true);
         tabs->addTab ("Plug-ins", bg, new PluginsTab (c), true);
         tabs->addTab ("Loops", bg, new LoopsTab (c), true);
-        tabs->setSize (700, 720);
+        tabs->setSize (900, 880);
         setContentOwned (tabs.release(), true);
         setResizable (true, false);
-        setResizeLimits (560, 520, 1200, 1100);
+        setResizeLimits (720, 640, 1500, 1300);
         centreWithSize (getWidth(), getHeight());
         setVisible (true);
     }
