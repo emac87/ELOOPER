@@ -2,7 +2,17 @@
 
 ELooper is a lightweight, low-latency looper and DAW for macOS. It records audio and MIDI into loops that start and stop on the beat, layers overdubs, and can automate anything on its mixer or on a plug-in. Its mixer has input gain, inserts, a 10-band EQ, sends and buses, and it hosts Audio Unit instruments and effects. Tempo and phase can be shared with other apps over Ableton Link. The application is written in C++17 on JUCE 8.0.4, with the real-time core kept free of JUCE so it can be unit-tested on its own. For day-to-day use, see the [User Guide](docs/USER_GUIDE.md). For code structure, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Quick start (macOS)
+## Install (macOS)
+
+Open **Terminal** and paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/emac87/ELOOPER/elooper-initial/tools/install.sh | bash
+```
+
+This downloads the newest build, installs `ELooper.app` in Applications, adds it to your Dock and opens it. After that, just click ELooper in the Dock: on launch it checks for a newer build, updates itself and reopens. You can turn this off with **File → Update Automatically**. Running the command again reinstalls the newest version.
+
+## Build from source (macOS)
 
 ```bash
 xcode-select --install          # once, if you don't have the command line tools
