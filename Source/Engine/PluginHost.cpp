@@ -113,7 +113,7 @@ struct PluginHost::Impl {
                     r.out.deleteFile();
                     r.proc = std::make_unique<juce::ChildProcess>();
                     const juce::StringArray args { exe.getFullPathName(), "--elooper-scan", r.job.format, r.job.id, r.out.getFullPathName() };
-                    post ((float) done / (float) juce::jmax<size_t> (1, jobs.size()), nameOf (r.job.id));
+                    post ((float) done / (float) std::max<size_t> (1, jobs.size()), nameOf (r.job.id));
                     ++next;
                     if (! r.proc->start (args, 0)) { finish (r, false); continue; }
                     running.push_back (std::move (r));
