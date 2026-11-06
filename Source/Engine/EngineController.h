@@ -118,6 +118,7 @@ public:
     void movePlugin (Id slotId, FxChain chain, int newIndex);
     void setPluginBypass (Id slotId, bool bypassed);
     void showPluginEditor (Id slotId);
+    void togglePluginEditor (Id slotId);   // open, or close if already open
     juce::MemoryBlock getPluginState (Id slotId) const;
     void setPluginState (Id slotId, const juce::MemoryBlock& state);
     // Multi-out: creates AuxOut tracks for every extra stereo pair of the track's instrument.

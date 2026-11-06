@@ -41,6 +41,7 @@ public:
     // Plugin editor windows (one per slot, floating, always-on-top optional).
     void showEditor (const PluginSlotPtr& slot);
     void closeEditor (Id slotId);
+    bool isEditorOpen (Id slotId) const;
     void closeAllEditors();
 
     static juce::File appDataDir();

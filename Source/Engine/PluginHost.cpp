@@ -327,6 +327,11 @@ void PluginHost::showEditor (const PluginSlotPtr& slot)
     });
 }
 
+bool PluginHost::isEditorOpen (Id slotId) const
+{
+    return impl->windows.count (slotId) > 0;
+}
+
 void PluginHost::closeEditor (Id slotId)
 {
     impl->windows.erase (slotId);

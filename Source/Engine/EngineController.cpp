@@ -719,6 +719,11 @@ void EngineController::showPluginEditor (Id slotId) {
     if (slot && slot->instance) plugins.showEditor (slot);
 }
 
+void EngineController::togglePluginEditor (Id slotId) {
+    if (plugins.isEditorOpen (slotId)) plugins.closeEditor (slotId);
+    else showPluginEditor (slotId);
+}
+
 juce::MemoryBlock EngineController::getPluginState (Id slotId) const {
     juce::MemoryBlock mb;
     auto [t, slot] = sessionPtr->findPlugin (slotId);

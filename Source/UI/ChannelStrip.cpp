@@ -156,7 +156,7 @@ public:
         if (chain != FxChain::Instrument && ledBounds().expanded (4).contains (e.getPosition()))
             c.setPluginBypass (slot->id, ! slot->bypassed.load());
         else
-            c.showPluginEditor (slot->id);
+            c.togglePluginEditor (slot->id);   // click again to hide the plugin window
     }
 
 private:
