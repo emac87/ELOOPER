@@ -7,6 +7,7 @@
 #include "UI/MainComponent.h"
 #include "UI/Theme.h"
 #include "Platform/Permissions.h"
+#include "Platform/Updater.h"
 
 class ELooperApp : public juce::JUCEApplication {
 public:
@@ -25,6 +26,7 @@ public:
             midiMapping = std::make_unique<el::MidiMapping> (*controller);
             presets = std::make_unique<el::PresetManager> (*controller);
             window = std::make_unique<MainWindow> (getApplicationName(), *controller, *midiMapping, *presets);
+            startUpdater();
             if (! granted)
                 juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Microphone access is off",
                     "ELooper can play back, but it can't record from your audio interface.\n\n"
@@ -36,6 +38,7 @@ public:
     {
         if (scanThread != nullptr) { scanThread->stopThread (2000); return; }
         el::closeSettingsWindow();
+        updater.reset();
         window.reset();
         presets.reset();
         midiMapping.reset();
@@ -70,6 +73,26 @@ private:
 
     std::unique_ptr<juce::Thread> scanThread;
 
+    // True when quitting would lose nothing: no recorded loop content and no plugins loaded.
+    bool nothingToLose() const
+    {
+        if (controller == nullptr) return true;
+        for (auto& t : controller->session().tracks) {
+            if (! t->allPlugins().empty()) return false;
+            for (auto& l : t->loops)
+                if (l->rt != nullptr && l->rt->takeCount() > 0) return false;
+        }
+        return true;
+    }
+
+    void startUpdater()
+    {
+        updater = std::make_unique<el::Updater> ([this] { return nothingToLose(); });
+        if (auto* mc = dynamic_cast<el::MainComponent*> (window->getContentComponent()))
+            mc->onCheckForUpdates = [this] { if (updater != nullptr) updater->checkInteractive(); };
+        updater->checkOnLaunch();
+    }
+
     class MainWindow : public juce::DocumentWindow {
     public:
         MainWindow (const juce::String& name, el::EngineController& c, el::MidiMapping& mm, el::PresetManager& p)
@@ -92,6 +115,7 @@ private:
     std::unique_ptr<el::MidiMapping> midiMapping;
     std::unique_ptr<el::PresetManager> presets;
     std::unique_ptr<MainWindow> window;
+    std::unique_ptr<el::Updater> updater;
 };
 
 START_JUCE_APPLICATION (ELooperApp)

@@ -14,6 +14,7 @@
 #include "UI/AutomationPanel.h"
 #include "UI/MidiEditor.h"
 #include "UI/TimelineView.h"
+#include <functional>
 #include <memory>
 
 namespace el {
@@ -41,6 +42,9 @@ public:
     void getAllCommands (juce::Array<juce::CommandID>&) override;
     void getCommandInfo (juce::CommandID, juce::ApplicationCommandInfo&) override;
     bool perform (const InvocationInfo&) override;
+
+    // Set by Main.cpp: runs an interactive update check ("Check for Updates...").
+    std::function<void()> onCheckForUpdates;
 
 private:
     struct LafInstaller {

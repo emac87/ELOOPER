@@ -2,6 +2,7 @@
 #include "UI/SettingsWindow.h"
 #include "UI/PluginBrowser.h"
 #include "Engine/SessionSerializer.h"
+#include "Platform/Updater.h"
 
 namespace el {
 
@@ -11,7 +12,7 @@ namespace {
         cmdPlayStop, cmdRecord, cmdOverdub, cmdClear,
         cmdMixer, cmdAutomation, cmdEditor, cmdLoops, cmdTimeline, cmdBounced,
         cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets,
-        cmdZoomIn, cmdZoomOut, cmdZoomReset,
+        cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdCheckUpdates, cmdAutoUpdate,
         cmdZoom100 = 0x3100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200
     };
     constexpr double zoomLevels[] = { 1.0, 1.25, 1.5, 1.75, 2.0 };
@@ -340,7 +341,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     juce::PopupMenu m;
     auto add = [&] (juce::CommandID id) { m.addCommandItem (&commandManager, id); };
     switch (index) {
-        case 0: add (cmdNew); add (cmdOpen); m.addSeparator(); add (cmdSave); add (cmdSaveAs); break;
+        case 0: add (cmdNew); add (cmdOpen); m.addSeparator(); add (cmdSave); add (cmdSaveAs); m.addSeparator();
+                add (cmdCheckUpdates); add (cmdAutoUpdate); break;
         case 1: add (cmdSettings); break;
         case 2: add (cmdLoops); add (cmdTimeline); add (cmdBounced); m.addSeparator();
                 add (cmdMixer); add (cmdAutomation); add (cmdEditor); m.addSeparator();
@@ -366,7 +368,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
     c.addArray ({ cmdNew, cmdOpen, cmdSave, cmdSaveAs, cmdSettings, cmdPlayStop, cmdRecord, cmdOverdub, cmdClear,
                   cmdMixer, cmdAutomation, cmdEditor, cmdLoops, cmdTimeline, cmdBounced,
                   cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets,
-                  cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdZoom100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200 });
+                  cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdCheckUpdates, cmdAutoUpdate, cmdZoom100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200 });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -381,6 +383,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdSave:     i.setInfo ("Save", "Save the project", "File", 0); i.addDefaultKeypress ('s', cmd); break;
         case cmdSaveAs:   i.setInfo ("Save As...", "Save the project under a new name", "File", 0);
                           i.addDefaultKeypress ('s', cmd | ModifierKeys::shiftModifier); break;
+        case cmdCheckUpdates: i.setInfo ("Check for Updates...", "Look for a newer version of ELooper", "File", 0); break;
+        case cmdAutoUpdate: i.setInfo ("Update Automatically", "Check for updates when ELooper starts", "File", 0);
+                          i.setTicked (settings != nullptr && settings->getBoolValue (Updater::autoUpdateKey, true)); break;
         case cmdSettings: i.setInfo ("Settings...", "Audio, MIDI and plugin settings", "Edit", 0); i.addDefaultKeypress (',', cmd); break;
         case cmdPlayStop: i.setInfo ("Play / Stop", "Start or stop the transport", "Transport", 0);
                           i.addDefaultKeypress (KeyPress::spaceKey, ModifierKeys()); break;
@@ -430,6 +435,14 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSave:     saveProject(); return true;
         case cmdSaveAs:   saveProjectAs(); return true;
         case cmdSettings: showSettingsWindow (controller, midiMap); return true;
+        case cmdCheckUpdates: if (onCheckForUpdates) onCheckForUpdates(); return true;
+        case cmdAutoUpdate:
+            if (settings != nullptr) {
+                settings->setValue (Updater::autoUpdateKey, ! settings->getBoolValue (Updater::autoUpdateKey, true));
+                settings->saveIfNeeded();
+                commandManager.commandStatusChanged();
+            }
+            return true;
         case cmdPlayStop: controller.togglePlay(); return true;
         case cmdRecord:   if (selection.loopId != kInvalidId) controller.triggerLoop (selection.loopId); return true;
         case cmdOverdub:  if (selection.loopId != kInvalidId) controller.overdubLoop (selection.loopId); return true;
