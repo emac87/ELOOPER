@@ -57,7 +57,7 @@ There are five kinds of track:
 | Kind | What it does |
 |---|---|
 | **Audio** | Records from an audio input. |
-| **Instrument** | Takes MIDI input and plays a software instrument (AU or VST3). Its MIDI loops record that input. |
+| **Instrument** | Takes MIDI input and plays a software instrument (Audio Unit). Its MIDI loops record that input. |
 | **Bus** | Receives sends and track outputs. It can record what it receives. |
 | **Master** | The final mix. It goes to the hardware output pair. Every session has one. |
 | **AuxOut** | An extra stereo output of a multi-output instrument. See [Mixer and routing](#mixer-and-routing). |

@@ -10,8 +10,12 @@ namespace {
         cmdNew = 0x3001, cmdOpen, cmdSave, cmdSaveAs, cmdSettings,
         cmdPlayStop, cmdRecord, cmdOverdub, cmdClear,
         cmdMixer, cmdAutomation, cmdEditor, cmdLoops, cmdTimeline, cmdBounced,
-        cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets
+        cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets,
+        cmdZoomIn, cmdZoomOut, cmdZoomReset,
+        cmdZoom100 = 0x3100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200
     };
+    constexpr double zoomLevels[] = { 1.0, 1.25, 1.5, 1.75, 2.0 };
+    constexpr double defaultUiScale = 1.25;
     constexpr int menuBarHeight = 24;
     constexpr int barThickness = 5;
 }
@@ -22,6 +26,17 @@ MainComponent::MainComponent (EngineController& c, MidiMapping& mm, PresetManage
       loopGrid (c, selection, mm, p),
       bouncedPage (c)
 {
+    {
+        juce::PropertiesFile::Options o;
+        o.applicationName = "ELooper";
+        o.filenameSuffix = ".settings";
+        o.osxLibrarySubFolder = "Application Support";
+        o.folderName = "ELooper";
+        settings = std::make_unique<juce::PropertiesFile> (o);
+        uiScale = juce::jlimit (0.75, 3.0, settings->getDoubleValue ("uiScale", defaultUiScale));
+        juce::Desktop::getInstance().setGlobalScaleFactor ((float) uiScale);
+    }
+
     timeline = std::make_unique<TimelineView> (controller, selection);
     mixer = std::make_unique<MixerPanel> (controller, selection);
     automation = std::make_unique<AutomationPanel> (controller, selection);
@@ -306,6 +321,17 @@ void MainComponent::addTrack (TrackKind k)
     if (k == TrackKind::Instrument) showPluginMenu (controller, id, FxChain::Instrument, 0, &transport);
 }
 
+void MainComponent::setUiScale (double scale)
+{
+    uiScale = juce::jlimit (0.75, 3.0, scale);
+    juce::Desktop::getInstance().setGlobalScaleFactor ((float) uiScale);
+    if (settings != nullptr) { settings->setValue ("uiScale", uiScale); settings->saveIfNeeded(); }
+    if (auto* top = getTopLevelComponent()) top->resized();
+    resized();
+    repaint();
+    commandManager.commandStatusChanged();
+}
+
 // ---- menus & commands -----------------------------------------------------------------------
 juce::StringArray MainComponent::getMenuBarNames() { return { "File", "Edit", "View", "Track" }; }
 
@@ -317,7 +343,17 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0: add (cmdNew); add (cmdOpen); m.addSeparator(); add (cmdSave); add (cmdSaveAs); break;
         case 1: add (cmdSettings); break;
         case 2: add (cmdLoops); add (cmdTimeline); add (cmdBounced); m.addSeparator();
-                add (cmdMixer); add (cmdAutomation); add (cmdEditor); break;
+                add (cmdMixer); add (cmdAutomation); add (cmdEditor); m.addSeparator();
+                {
+                    juce::PopupMenu zoom;
+                    for (int z = 0; z < 5; ++z) zoom.addCommandItem (&commandManager, cmdZoom100 + z);
+                    zoom.addSeparator();
+                    zoom.addCommandItem (&commandManager, cmdZoomIn);
+                    zoom.addCommandItem (&commandManager, cmdZoomOut);
+                    zoom.addCommandItem (&commandManager, cmdZoomReset);
+                    m.addSubMenu ("Zoom", zoom);
+                }
+                break;
         case 3: add (cmdAddAudio); add (cmdAddInstrument); add (cmdAddBus); m.addSeparator();
                 add (cmdBounceTrack); add (cmdPresets); break;
         default: break;
@@ -329,7 +365,8 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
 {
     c.addArray ({ cmdNew, cmdOpen, cmdSave, cmdSaveAs, cmdSettings, cmdPlayStop, cmdRecord, cmdOverdub, cmdClear,
                   cmdMixer, cmdAutomation, cmdEditor, cmdLoops, cmdTimeline, cmdBounced,
-                  cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets });
+                  cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets,
+                  cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdZoom100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200 });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -364,6 +401,16 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdTimeline: i.setInfo ("Timeline", "Timeline screen", "View", 0);
                           i.addDefaultKeypress ('t', ModifierKeys()); i.setTicked (page == Page::Timeline); break;
         case cmdBounced:  i.setInfo ("Bounced", "Bounced tracks", "View", 0); i.setTicked (page == Page::Bounced); break;
+        case cmdZoomIn:   i.setInfo ("Zoom In", "Make the interface larger", "View", 0);
+                          i.addDefaultKeypress ('=', cmd); i.addDefaultKeypress ('+', cmd); break;
+        case cmdZoomOut:  i.setInfo ("Zoom Out", "Make the interface smaller", "View", 0); i.addDefaultKeypress ('-', cmd); break;
+        case cmdZoomReset: i.setInfo ("Reset Zoom", "Reset the interface size to default", "View", 0); i.addDefaultKeypress ('0', cmd); break;
+        case cmdZoom100: case cmdZoom125: case cmdZoom150: case cmdZoom175: case cmdZoom200: {
+            const double z = zoomLevels[id - cmdZoom100];
+            i.setInfo (juce::String (juce::roundToInt (z * 100.0)) + "%", "Set interface zoom", "View", 0);
+            i.setTicked (std::abs (uiScale - z) < 0.01);
+            break;
+        }
         case cmdAddAudio: i.setInfo ("Add Audio Track", "Add an audio track", "Track", 0); break;
         case cmdAddInstrument: i.setInfo ("Add Instrument Track", "Add an instrument track", "Track", 0); break;
         case cmdAddBus:   i.setInfo ("Add Bus", "Add a bus", "Track", 0); break;
@@ -393,6 +440,17 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdLoops:    setPage (Page::Loops); return true;
         case cmdTimeline: setPage (page == Page::Timeline ? Page::Loops : Page::Timeline); return true;
         case cmdBounced:  setPage (Page::Bounced); return true;
+        case cmdZoomIn: {
+            for (double z : zoomLevels) if (z > uiScale + 0.01) { setUiScale (z); break; }
+            return true;
+        }
+        case cmdZoomOut: {
+            for (int k = 4; k >= 0; --k) if (zoomLevels[k] < uiScale - 0.01) { setUiScale (zoomLevels[k]); break; }
+            return true;
+        }
+        case cmdZoomReset: setUiScale (defaultUiScale); return true;
+        case cmdZoom100: case cmdZoom125: case cmdZoom150: case cmdZoom175: case cmdZoom200:
+            setUiScale (zoomLevels[info.commandID - cmdZoom100]); return true;
         case cmdAddAudio: addTrack (TrackKind::Audio); return true;
         case cmdAddInstrument: addTrack (TrackKind::Instrument); return true;
         case cmdAddBus:   addTrack (TrackKind::Bus); return true;

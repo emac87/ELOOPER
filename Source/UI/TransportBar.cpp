@@ -21,12 +21,45 @@ void TransportBar::PlayButton::paintButton (juce::Graphics& g, bool over, bool d
     g.drawRoundedRectangle (r, 6.0f, 1.0f);
     auto c = r.getCentre();
     g.setColour (on ? theme::play : theme::text);
-    if (on) g.fillRoundedRectangle (c.x - 7.0f, c.y - 7.0f, 14.0f, 14.0f, 2.0f);
+    if (on) g.fillRoundedRectangle (c.x - 9.0f, c.y - 9.0f, 18.0f, 18.0f, 3.0f);
     else {
         juce::Path p;
-        p.addTriangle (c.x - 6.0f, c.y - 8.0f, c.x - 6.0f, c.y + 8.0f, c.x + 8.0f, c.y);
+        p.addTriangle (c.x - 7.0f, c.y - 10.0f, c.x - 7.0f, c.y + 10.0f, c.x + 10.0f, c.y);
         g.fillPath (p);
     }
+}
+
+void TransportBar::GearButton::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    auto r = getLocalBounds().toFloat().reduced (1.0f);
+    if (over || down) {
+        g.setColour (theme::panelRaised.brighter (down ? 0.2f : 0.1f));
+        g.fillRoundedRectangle (r, 8.0f);
+    }
+    const float size = juce::jmin (r.getWidth(), r.getHeight());
+    const float outerR = size * 0.46f, innerR = size * 0.34f, toothHalf = 0.20f;   // radians per half tooth at inner radius
+    const int teeth = 8;
+    juce::Path p;
+    const float step = juce::MathConstants<float>::twoPi / (float) teeth;
+    for (int i = 0; i < teeth; ++i) {
+        const float a = (float) i * step;
+        const float a0 = a - toothHalf * 1.3f, a1 = a - toothHalf * 0.8f, a2 = a + toothHalf * 0.8f, a3 = a + toothHalf * 1.3f;
+        auto pt = [] (float ang, float rad) { return juce::Point<float> (std::sin (ang) * rad, -std::cos (ang) * rad); };
+        if (i == 0) p.startNewSubPath (pt (a0, innerR)); else p.lineTo (pt (a0, innerR));
+        p.lineTo (pt (a1, outerR));
+        p.lineTo (pt (a2, outerR));
+        p.lineTo (pt (a3, innerR));
+        // arc along the body to the next tooth
+        const float an = (float) (i + 1) * step - toothHalf * 1.3f;
+        p.addCentredArc (0.0f, 0.0f, innerR, innerR, 0.0f, a3, an, false);
+    }
+    p.closeSubPath();
+    p.addEllipse (-size * 0.14f, -size * 0.14f, size * 0.28f, size * 0.28f);
+    p.setUsingNonZeroWinding (false);
+    const auto c = r.getCentre();
+    const auto colour = juce::Colour (0xffb4b4bc);
+    g.setColour (down ? colour.brighter (0.5f) : over ? colour.brighter (0.45f) : colour);
+    g.fillPath (p, juce::AffineTransform::translation (c.x, c.y));
 }
 
 void TransportBar::TempoLabel::mouseDown (const juce::MouseEvent& e)
@@ -49,7 +82,7 @@ TransportBar::TransportBar (EngineController& c) : controller (c)
     playButton.onClick = [this] { controller.togglePlay(); };
 
     tempoLabel.setJustificationType (juce::Justification::centred);
-    tempoLabel.setFont (theme::font (20.0f, true));
+    tempoLabel.setFont (theme::font (22.0f, true));
     tempoLabel.setEditable (false, true, false);
     tempoLabel.setColour (juce::Label::backgroundColourId, theme::panelRaised);
     tempoLabel.setColour (juce::Label::outlineColourId, theme::outline);
@@ -147,43 +180,47 @@ void TransportBar::setDockOn (Dock d, bool on)
 
 void TransportBar::resized()
 {
-    const int h = getHeight(), m = 8, gap = 4;
-    const int bh = 30, by = (h - bh) / 2;
+    const int h = getHeight(), m = 10, gap = 6;
+    const int bh = 40, by = (h - bh) / 2;
     int right = getWidth() - m;
 
+    // widths
+    constexpr int playW = 48, posW = 100, phaseW = 84, tempoW = 84, tapW = 52, sigW = 68, masterLblW = 54,
+                  masterW = 68, metroW = 66, linkW = 80, syncW = 58, arrW = 82;
+    constexpr int cpuW = 72, pageW = 74, dockW = 58, gearSize = 44;
+
     // right cluster (right-aligned): settings, cpu (optional), docks, pages
-    settingsButton.setBounds (right - 28, by, 28, bh); right -= 28 + 8;
-    const int cpuW = 52;
-    const int pagesW = 3 * 52 + 2 * 2, docksW = 3 * 42 + 2 * 2;
-    int leftLimitNeeded = m + 40 + gap + 66 + gap + 62 + gap + 38 + gap + 52 + gap + 36 + 52 + gap + 44 + gap + 62 + gap + 46;
-    const bool showCpu = right - (pagesW + docksW + 8 + cpuW + 8) > leftLimitNeeded;
-    if (showCpu) { cpuR = { right - cpuW, by, cpuW, bh }; right -= cpuW + 8; } else cpuR = {};
-    for (int i = 2; i >= 0; --i) { dockButtons[i].setBounds (right - 42, by, 42, bh); right -= 42 + (i > 0 ? 2 : 0); }
-    right -= 8;
-    for (int i = 2; i >= 0; --i) { pageButtons[i].setBounds (right - 52, by, 52, bh); right -= 52 + (i > 0 ? 2 : 0); }
-    right -= 12;
+    settingsButton.setBounds (right - gearSize, (h - gearSize) / 2, gearSize, gearSize); right -= gearSize + 10;
+    const int pagesW = 3 * pageW + 2 * 2, docksW = 3 * dockW + 2 * 2;
+    const int leftLimitNeeded = m + playW + gap + posW + gap + tempoW + gap + tapW + gap + sigW + gap
+                                + masterLblW + masterW + gap + metroW + gap + linkW + gap + arrW;
+    const bool showCpu = right - (pagesW + docksW + 10 + cpuW + 10) > leftLimitNeeded;
+    if (showCpu) { cpuR = { right - cpuW, by, cpuW, bh }; right -= cpuW + 10; } else cpuR = {};
+    for (int i = 2; i >= 0; --i) { dockButtons[i].setBounds (right - dockW, by, dockW, bh); right -= dockW + (i > 0 ? 2 : 0); }
+    right -= 10;
+    for (int i = 2; i >= 0; --i) { pageButtons[i].setBounds (right - pageW, by, pageW, bh); right -= pageW + (i > 0 ? 2 : 0); }
+    right -= 14;
 
     // left cluster
     int x = m;
     auto place = [&] (juce::Component& c, int w) { c.setBounds (x, by, w, bh); x += w + gap; };
-    place (playButton, 40);
-    positionR = { x, by, 66, bh }; x += 66 + gap;
-    const int phaseW = 70, syncW = 40;
-    const int restW = 62 + gap + 38 + gap + 52 + gap + 36 + 52 + gap + 44 + gap + 62 + gap + 46;
+    place (playButton, playW);
+    positionR = { x, by, posW, bh }; x += posW + gap;
+    const int restW = tempoW + gap + tapW + gap + sigW + gap + masterLblW + masterW + gap + metroW + gap + linkW + gap + arrW;
     const bool showPhase = x + phaseW + gap + restW <= right;
-    if (showPhase) { phaseR = { x, by + 6, phaseW, bh - 12 }; x += phaseW + gap; } else phaseR = {};
-    tempoLabelR = { x, by, 62, bh };
-    place (tempoLabel, 62);
-    place (tapButton, 38);
-    place (sigBox, 52);
-    masterLabelR = { x, by, 36, bh }; x += 36;
-    place (masterBox, 52);
-    place (metroButton, 44);
-    place (linkButton, 62);
-    const bool showSync = x + syncW + gap + 46 <= right;
+    if (showPhase) { phaseR = { x, by + 8, phaseW, bh - 16 }; x += phaseW + gap; } else phaseR = {};
+    tempoLabelR = { x, by, tempoW, bh };
+    place (tempoLabel, tempoW);
+    place (tapButton, tapW);
+    place (sigBox, sigW);
+    masterLabelR = { x, by, masterLblW, bh }; x += masterLblW;
+    place (masterBox, masterW);
+    place (metroButton, metroW);
+    place (linkButton, linkW);
+    const bool showSync = x + syncW + gap + arrW <= right;
     syncButton.setVisible (showSync);
     if (showSync) place (syncButton, syncW);
-    place (arrButton, 46);
+    place (arrButton, arrW);
 }
 
 void TransportBar::paint (juce::Graphics& g)
@@ -198,7 +235,7 @@ void TransportBar::paint (juce::Graphics& g)
     g.setColour (theme::outline);
     g.drawRoundedRectangle (positionR.toFloat().reduced (0.5f), 6.0f, 1.0f);
     g.setColour (theme::text);
-    g.setFont (theme::font (17.0f, true));
+    g.setFont (theme::font (22.0f, true));
     g.drawText (positionText, positionR, juce::Justification::centred);
 
     // phase indicator
@@ -218,7 +255,7 @@ void TransportBar::paint (juce::Graphics& g)
     }
 
     g.setColour (theme::textDim);
-    g.setFont (theme::font (11.0f, true));
+    g.setFont (theme::font (13.0f, true));
     g.drawText ("Master", masterLabelR, juce::Justification::centredLeft);
 
     if (! cpuR.isEmpty()) {
@@ -231,7 +268,7 @@ void TransportBar::paint (juce::Graphics& g)
         g.setColour (theme::outline);
         g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
         g.setColour (juce::Colours::white);
-        g.setFont (theme::font (11.0f, true));
+        g.setFont (theme::font (14.0f, true));
         g.drawText ("CPU " + juce::String (shownCpu) + "%", cpuR, juce::Justification::centred);
     }
 }

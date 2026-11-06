@@ -31,6 +31,11 @@ private:
         PlayButton() : juce::Button ("play") { setClickingTogglesState (false); }
         void paintButton (juce::Graphics&, bool over, bool down) override;
     };
+    // Settings cogwheel drawn as a path (8 teeth, centre hole).
+    struct GearButton : public juce::Button {
+        GearButton() : juce::Button ("settings") { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+        void paintButton (juce::Graphics&, bool over, bool down) override;
+    };
     // Tempo read-out: drag vertically to change, double-click to type.
     struct TempoLabel : public juce::Label {
         std::function<void (double)> onDragTempo;
@@ -54,7 +59,7 @@ private:
     juce::ToggleButton metroButton { "Metro" }, linkButton { "Link" }, syncButton { "Sync" }, arrButton { "Arr Rec" };
     juce::TextButton pageButtons[3];
     juce::ToggleButton dockButtons[3];
-    juce::TextButton settingsButton { juce::String::fromUTF8 ("\xe2\x9a\x99") };
+    GearButton settingsButton;
 
     // layout results (used by paint)
     juce::Rectangle<int> positionR, phaseR, cpuR, masterLabelR, tempoLabelR;

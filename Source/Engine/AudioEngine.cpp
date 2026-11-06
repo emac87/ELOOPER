@@ -95,6 +95,14 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* d) {
     latOut = d->getOutputLatencyInSamples();
     silence.setSize (2, std::max (currentBlock.load(), 4096));
     silence.clear();
+    // The callback receives only the *active* channels, packed. Map hardware channel numbers
+    // (what tracks and the master output store) to positions in those arrays.
+    auto build = [] (const juce::BigInteger& active, int* map) {
+        int k = 0;
+        for (int ch = 0; ch < kMaxHardwareChannels; ++ch) map[ch] = active[ch] ? k++ : -1;
+    };
+    build (d->getActiveInputChannels(), inputMap);
+    build (d->getActiveOutputChannels(), outputMap);
 }
 
 void AudioEngine::audioDeviceStopped() {}
@@ -102,6 +110,7 @@ void AudioEngine::audioDeviceStopped() {}
 void AudioEngine::prepareOffline (double sr, int block) {
     currentRate = sr; currentBlock = block; latIn = 0; latOut = 0;
     link.setOffline (true);
+    for (int ch = 0; ch < kMaxHardwareChannels; ++ch) inputMap[ch] = outputMap[ch] = ch;
     silence.setSize (2, std::max (block, 4096));
     silence.clear();
 }
@@ -210,10 +219,12 @@ void AudioEngine::render (const float* const* in, int numIn, float* const* out, 
 
         if (g->masterIndex >= 0) {
             auto& m = g->nodes[(size_t) g->masterIndex];
-            const int ch = std::max (0, m.hardwareOutput);
-            for (int c = 0; c < 2; ++c)
-                if (ch + c < numOut && subOut[ch + c] != nullptr)
-                    juce::FloatVectorOperations::copy (subOut[ch + c], m.output.getReadPointer (c), n);
+            const int hw = std::clamp (m.hardwareOutput, 0, kMaxHardwareChannels - 2);
+            int ch = outputMap[hw];
+            if (ch < 0) ch = 0;   // chosen pair not enabled: fall back to the first active outputs
+            const int chR = outputMap[hw + 1] >= 0 ? outputMap[hw + 1] : ch + 1;
+            if (ch < numOut && subOut[ch] != nullptr) juce::FloatVectorOperations::copy (subOut[ch], m.output.getReadPointer (0), n);
+            if (chR < numOut && subOut[chR] != nullptr) juce::FloatVectorOperations::copy (subOut[chR], m.output.getReadPointer (1), n);
             if (ts->metronome && t.playing) renderMetronome (subOut, numOut, ch, t);
         }
 
@@ -506,10 +517,13 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
     } else if (n.isBusLikeOrAux()) {
         n.input.copyFrom (0, 0, n.bus, 0, 0, ns);
         n.input.copyFrom (1, 0, n.bus, 1, 0, ns);
-    } else if (n.inputChannel >= 0 && n.inputChannel < numIn && in[n.inputChannel] != nullptr) {
-        juce::FloatVectorOperations::copy (inL, in[n.inputChannel], ns);
-        const int rc = n.stereoInput ? n.inputChannel + 1 : n.inputChannel;
-        juce::FloatVectorOperations::copy (inR, rc < numIn && in[rc] != nullptr ? in[rc] : in[n.inputChannel], ns);
+    } else if (n.inputChannel >= 0 && n.inputChannel < kMaxHardwareChannels
+               && inputMap[n.inputChannel] >= 0 && inputMap[n.inputChannel] < numIn && in[inputMap[n.inputChannel]] != nullptr) {
+        const float* l = in[inputMap[n.inputChannel]];
+        juce::FloatVectorOperations::copy (inL, l, ns);
+        const int hr = n.stereoInput ? n.inputChannel + 1 : n.inputChannel;
+        const int rc = hr < kMaxHardwareChannels ? inputMap[hr] : -1;
+        juce::FloatVectorOperations::copy (inR, rc >= 0 && rc < numIn && in[rc] != nullptr ? in[rc] : l, ns);
     }
     rampGain (inL, ns, g0, n.smoothInGain);
     rampGain (inR, ns, g0, n.smoothInGain);

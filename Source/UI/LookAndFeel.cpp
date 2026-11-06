@@ -73,9 +73,9 @@ void ELooperLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& 
     g.drawRoundedRectangle (r, 5.0f, 1.0f);
 }
 
-juce::Font ELooperLookAndFeel::getTextButtonFont (juce::TextButton&, int h)
+juce::Font ELooperLookAndFeel::getTextButtonFont (juce::TextButton& b, int h)
 {
-    return theme::font (juce::jmin (13.0f, (float) h * 0.55f), true);
+    return theme::font (juce::jlimit (13.0f, 15.0f, (float) h * 0.45f), b.getToggleState());
 }
 
 void ELooperLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& b, bool over, bool)
@@ -88,7 +88,7 @@ void ELooperLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton
     g.setColour (on ? tick : theme::outline);
     g.drawRoundedRectangle (r, 5.0f, 1.0f);
     g.setColour (b.isEnabled() ? (on ? juce::Colours::white : theme::textDim.brighter (0.4f)) : theme::textDim);
-    g.setFont (theme::font (juce::jmin (13.0f, r.getHeight() * 0.55f), true));
+    g.setFont (theme::font (juce::jlimit (13.0f, 15.0f, r.getHeight() * 0.45f), true));
     g.drawText (b.getButtonText(), b.getLocalBounds().reduced (2, 0), juce::Justification::centred, true);
 }
 
@@ -173,8 +173,28 @@ void ELooperLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
     g.fillPath (arrow);
 }
 
-juce::Font ELooperLookAndFeel::getComboBoxFont (juce::ComboBox&) { return theme::font (13.0f); }
-juce::Font ELooperLookAndFeel::getPopupMenuFont() { return theme::font (14.0f); }
+juce::Font ELooperLookAndFeel::getComboBoxFont (juce::ComboBox&) { return theme::font (15.0f); }
+juce::Font ELooperLookAndFeel::getPopupMenuFont() { return theme::font (16.0f); }
+juce::Font ELooperLookAndFeel::getLabelFont (juce::Label& l) { return l.getFont().withHeight (juce::jmax (14.0f, l.getFont().getHeight())); }
+juce::Font ELooperLookAndFeel::getSliderPopupFont (juce::Slider&) { return theme::font (15.0f, true); }
+juce::Font ELooperLookAndFeel::getTabButtonFont (juce::TabBarButton&, float h) { return theme::font (juce::jlimit (14.0f, 16.0f, h * 0.55f), true); }
+juce::Font ELooperLookAndFeel::getAlertWindowTitleFont() { return theme::font (20.0f, true); }
+juce::Font ELooperLookAndFeel::getAlertWindowMessageFont() { return theme::font (16.0f); }
+juce::Font ELooperLookAndFeel::getAlertWindowFont() { return theme::font (15.0f); }
+
+juce::Label* ELooperLookAndFeel::createSliderTextBox (juce::Slider& s)
+{
+    auto* l = LookAndFeel_V4::createSliderTextBox (s);
+    l->setFont (theme::font (14.0f));
+    return l;
+}
+
+void ELooperLookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bool isSeparator, int standardMenuItemHeight,
+                                                    int& idealWidth, int& idealHeight)
+{
+    LookAndFeel_V4::getIdealPopupMenuItemSize (text, isSeparator, standardMenuItemHeight, idealWidth, idealHeight);
+    if (! isSeparator) idealHeight = juce::jmax (idealHeight, 28);
+}
 
 void ELooperLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& sb, int x, int y, int w, int h,
                                         bool vertical, int thumbStart, int thumbSize, bool over, bool down)

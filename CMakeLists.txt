@@ -49,15 +49,19 @@ juce_add_gui_app(ELooper
 )
 
 file(GLOB ELOOPER_APP_SOURCES CONFIGURE_DEPENDS
-    Source/Model/*.cpp Source/Engine/*.cpp Source/UI/*.cpp Source/Main.cpp)
+    Source/Model/*.cpp Source/Engine/*.cpp Source/UI/*.cpp Source/Platform/*.cpp Source/Main.cpp)
 target_sources(ELooper PRIVATE ${ELOOPER_APP_SOURCES})
+if(APPLE)
+    target_sources(ELooper PRIVATE Source/Platform/Permissions_mac.mm)
+    target_link_libraries(ELooper PRIVATE "-framework AVFoundation")
+endif()
 
 target_compile_definitions(ELooper PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:ELooper,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:ELooper,JUCE_VERSION>"
-    JUCE_PLUGINHOST_VST3=1
+    JUCE_PLUGINHOST_VST3=0   # Audio Units only
     JUCE_PLUGINHOST_LV2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
 )
@@ -84,7 +88,7 @@ if(ELOOPER_BUILD_TESTS)
     file(GLOB ELOOPER_ENGINE_SOURCES CONFIGURE_DEPENDS Source/Model/*.cpp Source/Engine/*.cpp)
     target_sources(elooper_engine_tests PRIVATE ${ELOOPER_ENGINE_SOURCES} Tests/EngineTests.cpp)
     target_compile_definitions(elooper_engine_tests PRIVATE
-        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=1 JUCE_PLUGINHOST_LV2=0
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=0 JUCE_PLUGINHOST_LV2=0
         ELOOPER_HEADLESS=1)
     if(APPLE)
         target_compile_definitions(elooper_engine_tests PRIVATE JUCE_PLUGINHOST_AU=1)

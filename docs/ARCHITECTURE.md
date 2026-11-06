@@ -1,6 +1,6 @@
 # ELooper architecture (contributor brief)
 
-C++17 + JUCE 8 + Ableton Link. macOS target (AU + VST3 hosting, CoreAudio/CoreMIDI); also builds on Linux (VST3, ALSA) for CI.
+C++17 + JUCE 8 + Ableton Link. macOS target (Audio Unit hosting, CoreAudio/CoreMIDI); also builds on Linux (no plug-in hosting, ALSA) for CI.
 
 ## Layers
 | Dir | What | Threads |

@@ -60,6 +60,7 @@ EngineController::EngineController (bool openAudioDevice)
             devices.setAudioDeviceSetup (setup, true);
         }
         devices.addAudioCallback (audioEngine.get());
+        preparedRate = audioEngine->sampleRate(); preparedBlock = maxBlock();
         devices.addMidiInputDeviceCallback ({}, audioEngine.get());
         devices.addChangeListener (impl.get());
     } else {
@@ -214,16 +215,23 @@ void EngineController::publishTransport() {
 }
 
 void EngineController::deviceChanged() {
-    // Re-prepare plugins for the new rate / block size with the callback detached.
+    // Remember the user's choice immediately (not only on a clean quit).
+    if (auto xml = devices.createStateXml()) xml->writeTo (deviceStateFile());
+    auto* dev = devices.getCurrentAudioDevice();
+    if (dev == nullptr) return;
+    const double sr = dev->getCurrentSampleRate();
+    const int block = std::max (256, dev->getCurrentBufferSizeSamples());
+    if (sr == preparedRate && block == preparedBlock) { notify (Change::Transport); return; }  // only channels changed
+    // Rate or buffer size changed: re-prepare plugins with the callback detached.
     devices.removeAudioCallback (audioEngine.get());
-    const double sr = audioEngine->sampleRate();
     for (auto& t : sessionPtr->tracks)
         for (auto& p : t->allPlugins())
             if (p && p->instance) {
                 p->instance->releaseResources();
-                p->instance->setRateAndBufferSizeDetails (sr, maxBlock());
-                p->instance->prepareToPlay (sr, maxBlock());
+                p->instance->setRateAndBufferSizeDetails (sr, block);
+                p->instance->prepareToPlay (sr, block);
             }
+    preparedRate = sr; preparedBlock = block;
     rebuildGraph();
     devices.addAudioCallback (audioEngine.get());
     notify (Change::Transport);
@@ -418,7 +426,22 @@ void EngineController::setTrackColour (Id id, juce::Colour c) {
 }
 
 void EngineController::setTrackInput (Id id, int ch, bool stereo) {
-    if (auto t = sessionPtr->findTrack (id)) { t->inputChannel = ch; t->stereoInput = stereo; rebuildGraph(); notify (Change::Track, id); }
+    auto t = sessionPtr->findTrack (id);
+    if (! t) return;
+    t->inputChannel = ch; t->stereoInput = stereo;
+    // Make sure the chosen hardware input(s) are actually enabled on the device.
+    if (ch >= 0 && devices.getCurrentAudioDevice() != nullptr) {
+        auto setup = devices.getAudioDeviceSetup();
+        const bool missing = ! setup.inputChannels[ch] || (stereo && ! setup.inputChannels[ch + 1]);
+        if (missing) {
+            setup.useDefaultInputChannels = false;
+            setup.inputChannels.setBit (ch);
+            if (stereo) setup.inputChannels.setBit (ch + 1);
+            devices.setAudioDeviceSetup (setup, true);
+        }
+    }
+    rebuildGraph();
+    notify (Change::Track, id);
 }
 
 void EngineController::setTrackMidiInput (Id id, const juce::String& dev, int channel) {
@@ -619,8 +642,9 @@ void EngineController::recordAutomation() {
 void EngineController::preparePlugin (PluginSlot& slot, std::unique_ptr<juce::AudioPluginInstance> inst) {
     if (slot.description.isInstrument) slot.numOutputChannels = PluginHost::enableMultiOut (*inst);
     else slot.numOutputChannels = inst->getTotalNumOutputChannels();
-    inst->setRateAndBufferSizeDetails (audioEngine->sampleRate(), maxBlock());
-    inst->prepareToPlay (audioEngine->sampleRate(), maxBlock());
+    preparedRate = audioEngine->sampleRate(); preparedBlock = maxBlock();
+    inst->setRateAndBufferSizeDetails (preparedRate, preparedBlock);
+    inst->prepareToPlay (preparedRate, preparedBlock);
     slot.latencySamples = inst->getLatencySamples();
     slot.instance = std::move (inst);
 }

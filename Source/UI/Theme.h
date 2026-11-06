@@ -17,9 +17,9 @@ namespace el::theme {
     inline const juce::Colour meterLow     { 0xff34c759 };
     inline const juce::Colour meterMid     { 0xffffd60a };
     inline const juce::Colour meterHigh    { 0xffff3b30 };
-    constexpr int   transportHeight = 52;
-    constexpr int   stripWidth      = 92;
-    constexpr int   loopCellSize    = 84;
+    constexpr int   transportHeight = 64;
+    constexpr int   stripWidth      = 104;
+    constexpr int   loopCellSize    = 96;
     constexpr float cornerRadius    = 6.0f;
     constexpr int   uiRefreshHz     = 30;
     inline juce::Font font (float h, bool bold = false) { return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain)); }

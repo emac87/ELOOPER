@@ -54,7 +54,10 @@ bool isMidiEffect (const juce::PluginDescription& d)
 
 // ---------------------------------------------------------------------------------------------
 struct PluginHost::Impl {
-    // Background scanner. Callbacks are marshalled to the message thread and guarded by `alive`.
+    // Background scanner. Every plugin is probed in a separate child process (this app
+    // relaunched with --elooper-scan), so a plugin that crashes or hangs while being scanned
+    // is blacklisted instead of taking ELooper down. Callbacks are marshalled to the message
+    // thread and guarded by `alive`.
     class ScanThread : public juce::Thread {
     public:
         ScanThread (juce::AudioPluginFormatManager& fm, juce::KnownPluginList& kl,
@@ -69,28 +72,64 @@ struct PluginHost::Impl {
 
         void run() override
         {
-            const auto dataDir = PluginHost::appDataDir();
-            const auto pedal = dataDir.getChildFile ("scan-deadmanspedal.txt");
-            const auto listFile = dataDir.getChildFile ("plugins.xml");
-            const int numFormats = formats.getNumFormats();
+            const auto listFile = PluginHost::appDataDir().getChildFile ("plugins.xml");
+            const auto tmpDir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("ELooperScan");
+            tmpDir.createDirectory();
+            const auto exe = juce::File::getSpecialLocation (juce::File::currentExecutableFile);
 
-            for (int f = 0; f < numFormats && ! threadShouldExit(); ++f)
-            {
+            struct Job { juce::String format, id; };
+            std::vector<Job> jobs;
+            for (int f = 0; f < formats.getNumFormats(); ++f) {
                 auto* format = formats.getFormat (f);
-                juce::PluginDirectoryScanner scanner (known, *format, format->getDefaultLocationsToSearch(),
-                                                      true, pedal, false);
-                juce::String name;
-                for (;;)
-                {
-                    if (threadShouldExit()) break;
-                    const auto next = scanner.getNextPluginFileThatWillBeScanned();
-                    post (((float) f + scanner.getProgress()) / (float) juce::jmax (1, numFormats), next);
-                    if (! scanner.scanNextFile (true, name))
-                        break;
-                    if (auto xml = known.createXml())
-                        xml->writeTo (listFile);   // persist after each plugin so a crash keeps progress
-                }
+                for (auto& id : format->searchPathsForPlugins (format->getDefaultLocationsToSearch(), true, false))
+                    if (! known.getBlacklistedFiles().contains (id) && ! known.isListingUpToDate (id, *format))
+                        jobs.push_back ({ format->getName(), id });
             }
+
+            struct Running { std::unique_ptr<juce::ChildProcess> proc; Job job; juce::File out; juce::uint32 started; };
+            std::vector<Running> running;
+            const int maxParallel = juce::jlimit (1, 4, juce::SystemStats::getNumCpus() / 2);
+            constexpr juce::uint32 timeoutMs = 60000;
+            size_t next = 0, done = 0;
+
+            auto finish = [&] (Running& r, bool ok) {
+                bool added = false;
+                if (ok) if (auto xml = juce::parseXML (r.out)) {
+                    for (auto* e : xml->getChildIterator()) {
+                        juce::PluginDescription d;
+                        if (d.loadFromXml (*e)) { known.addType (d); added = true; }
+                    }
+                }
+                if (! added) known.addToBlacklist (r.job.id);   // crashed, hung or not a plugin
+                r.out.deleteFile();
+                ++done;
+                if (auto xml = known.createXml()) xml->writeTo (listFile);
+            };
+
+            while (! threadShouldExit() && (next < jobs.size() || ! running.empty())) {
+                while (running.size() < (size_t) maxParallel && next < jobs.size()) {
+                    Running r; r.job = jobs[next]; r.started = juce::Time::getMillisecondCounter();
+                    r.out = tmpDir.getChildFile ("scan-" + juce::String ((int) next) + ".xml");
+                    r.out.deleteFile();
+                    r.proc = std::make_unique<juce::ChildProcess>();
+                    const juce::StringArray args { exe.getFullPathName(), "--elooper-scan", r.job.format, r.job.id, r.out.getFullPathName() };
+                    post ((float) done / (float) juce::jmax<size_t> (1, jobs.size()), nameOf (r.job.id));
+                    ++next;
+                    if (! r.proc->start (args, 0)) { finish (r, false); continue; }
+                    running.push_back (std::move (r));
+                }
+                for (size_t i = 0; i < running.size();) {
+                    auto& r = running[i];
+                    const bool timedOut = juce::Time::getMillisecondCounter() - r.started > timeoutMs;
+                    if (! r.proc->isRunning() || timedOut) {
+                        if (timedOut) r.proc->kill();
+                        finish (r, ! timedOut && r.proc->getExitCode() == 0);
+                        running.erase (running.begin() + (long) i);
+                    } else ++i;
+                }
+                wait (30);
+            }
+            for (auto& r : running) { r.proc->kill(); r.out.deleteFile(); }   // cancelled
 
             if (auto xml = known.createXml())
                 xml->writeTo (listFile);
@@ -105,6 +144,13 @@ struct PluginHost::Impl {
         }
 
     private:
+        static juce::String nameOf (const juce::String& id)
+        {
+            // AU identifiers look like "AudioUnit:Synths/aumu,abcd,Manu" — show something readable.
+            return id.fromLastOccurrenceOf ("/", false, false).upToFirstOccurrenceOf (",", false, false).isNotEmpty()
+                       ? id.fromLastOccurrenceOf ("/", false, false) : id;
+        }
+
         void post (float progress, const juce::String& current)
         {
             auto flag = alive;
@@ -133,9 +179,7 @@ PluginHost::PluginHost() : impl (std::make_unique<Impl>())
 #if JUCE_PLUGINHOST_AU && JUCE_MAC
     formatManager.addFormat (new juce::AudioUnitPluginFormat());
 #endif
-#if JUCE_PLUGINHOST_VST3
-    formatManager.addFormat (new juce::VST3PluginFormat());
-#endif
+    // Audio Units only (VST3 support was removed at the user's request).
     loadKnownList();
 }
 
@@ -188,6 +232,12 @@ void PluginHost::loadKnownList()
     if (! f.existsAsFile()) return;
     if (auto xml = juce::parseXML (f))
         knownList.recreateFromXml (*xml);
+    // Drop entries for formats this build no longer hosts (e.g. VST3 from older versions).
+    juce::StringArray hosted;
+    for (int i = 0; i < formatManager.getNumFormats(); ++i) hosted.add (formatManager.getFormat (i)->getName());
+    for (auto& t : knownList.getTypes())
+        if (! hosted.contains (t.pluginFormatName))
+            knownList.removeType (t);
 }
 
 void PluginHost::saveKnownList()
@@ -288,3 +338,28 @@ void PluginHost::closeAllEditors()
 }
 
 } // namespace el
+
+// ---------------------------------------------------------------------------------------------
+// Child-process side of the scanner: ELooper --elooper-scan <format> <identifier> <outFile>
+int el::PluginHost::runScanChild (const juce::StringArray& args)
+{
+    const int i = args.indexOf ("--elooper-scan");
+    if (i < 0 || i + 3 >= args.size()) return 3;
+    const auto formatName = args[i + 1], id = args[i + 2];
+    const juce::File out (args[i + 3]);
+    juce::AudioPluginFormatManager fm;
+#if JUCE_PLUGINHOST_AU && JUCE_MAC
+    fm.addFormat (new juce::AudioUnitPluginFormat());
+#endif
+    for (int f = 0; f < fm.getNumFormats(); ++f) {
+        auto* format = fm.getFormat (f);
+        if (format->getName() != formatName) continue;
+        juce::OwnedArray<juce::PluginDescription> found;
+        format->findAllTypesForFile (found, id);
+        if (found.isEmpty()) return 2;
+        juce::XmlElement root ("PLUGINS");
+        for (auto* d : found) root.addChildElement (d->createXml().release());
+        return root.writeTo (out) ? 0 : 4;
+    }
+    return 1;
+}

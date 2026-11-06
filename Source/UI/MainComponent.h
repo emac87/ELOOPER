@@ -54,6 +54,8 @@ private:
     void setPage (Page);
     void setDock (Dock, bool visible);
     void relayout();
+    void setUiScale (double scale);
+    double currentUiScale() const { return uiScale; }
     void applyLayout();
     juce::Component* dockComponent (int i);
 
@@ -77,6 +79,8 @@ private:
     Selection selection;
     juce::ApplicationCommandManager commandManager;
     juce::TooltipWindow tooltips { nullptr, 600 };
+    std::unique_ptr<juce::PropertiesFile> settings;
+    double uiScale = 1.25;
 
     TransportBar transport;
     LoopGrid loopGrid;

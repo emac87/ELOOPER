@@ -43,7 +43,11 @@ public:
     void closeEditor (Id slotId);
     void closeAllEditors();
 
-    static juce::File appDataDir();   // ~/Library/Application Support/ELooper (created if missing)
+    static juce::File appDataDir();
+
+    // Entry point for the out-of-process scanner child (see Main.cpp). Returns the exit code.
+    // Must run on a background thread of the child process while its message loop runs.
+    static int runScanChild (const juce::StringArray& commandLineArgs);   // ~/Library/Application Support/ELooper (created if missing)
 
 private:
     struct Impl;

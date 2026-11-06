@@ -217,6 +217,7 @@ private:
     std::unique_ptr<AudioEngine> audioEngine;
     juce::ListenerList<Listener> listeners;
     bool arrangementRecord = false;
+    double preparedRate = 0; int preparedBlock = 0;   // what plugins were last prepared with
     void notify (Change c, Id id = kInvalidId);
 
     // internals (EngineController.cpp)

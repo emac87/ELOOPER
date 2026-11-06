@@ -164,6 +164,9 @@ private:
     int64_t sampleClock = 0;
     double metroPhase = 0; int metroRemaining = 0; float metroFreq = 1000;
     juce::AudioBuffer<float> silence;
+    static constexpr int kMaxHardwareChannels = 64;
+    int inputMap[kMaxHardwareChannels] {};    // hardware input channel -> callback array index (-1 = inactive)
+    int outputMap[kMaxHardwareChannels] {};
 
     struct Bounce { LoopRt* target = nullptr; Id sourceTrack = kInvalidId; Id targetTrack = kInvalidId; bool capturing = false; };
     Bounce bounces[8];
