@@ -6,14 +6,18 @@
 #include "Engine/PresetManager.h"
 #include "UI/Selection.h"
 #include <functional>
+#include <memory>
 
 namespace el {
 
+class PluginIconButton;
+
 class TrackHeader : public juce::Component {
 public:
-    static constexpr int headerHeight = 160;
+    static constexpr int headerHeight = 184;
 
     TrackHeader (EngineController&, Selection&, PresetManager&, Id trackId);
+    ~TrackHeader() override;
 
     Id getTrackId() const noexcept { return trackId; }
     void refresh();   // re-read name / colour / summaries
@@ -51,6 +55,8 @@ private:
     bool muted = false, soloed = false, armed = false;
     MonitorMode monitor = MonitorMode::Auto;
     int meterL = 0, meterR2 = 0;
+
+    std::unique_ptr<PluginIconButton> iconButton;
 
     bool dragging = false;
     int downX = 0;

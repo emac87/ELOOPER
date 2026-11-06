@@ -2,6 +2,8 @@
 #include "UI/ColourPicker.h"
 #include "UI/LookAndFeel.h"
 #include "UI/PluginBrowser.h"
+#include "UI/PluginIcons.h"
+#include "UI/Theme.h"
 
 namespace el {
 
@@ -10,7 +12,7 @@ namespace {
     {
         switch (k) {
             case TrackKind::Audio:      return "AUDIO";
-            case TrackKind::Instrument: return "INSTRUMENT";
+            case TrackKind::Instrument: return "INST";
             case TrackKind::Bus:        return "BUS";
             case TrackKind::Master:     return "MASTER";
             case TrackKind::AuxOut:     return "AUX OUT";
@@ -23,9 +25,116 @@ namespace {
     }
 }
 
+
+// Icon at the left of the name row: reflects the track's plugin (or the channel type).
+// Left click toggles the plugin editor, right click offers icon overrides.
+class PluginIconButton : public juce::Component, public juce::SettableTooltipClient {
+public:
+    PluginIconButton (EngineController& c, Id id) : controller (c), trackId (id) {}
+
+    std::function<void()> onPressed;
+
+    void refresh()
+    {
+        auto t = controller.session().findTrack (trackId);
+        if (t == nullptr) return;
+        auto slot = icons::iconSlot (*t);
+        setTooltip (slot != nullptr ? slot->name() + "  (click: open editor, right-click: change icon)"
+                                    : channelName (*t) + " channel  (right-click: change icon)");
+        repaint();
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto t = controller.session().findTrack (trackId);
+        if (t == nullptr) return;
+        auto b = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (hover ? theme::panelRaised.brighter (0.15f) : theme::panelRaised.darker (0.4f));
+        g.fillRoundedRectangle (b, 7.0f);
+        g.setColour (hover ? t->colour.withAlpha (0.8f) : theme::outline);
+        g.drawRoundedRectangle (b, 7.0f, 1.0f);
+        icons::IconCache::get().drawIcon (g, b.reduced (8.0f), *t, hover ? t->colour.brighter (0.3f) : t->colour);
+    }
+
+    void mouseEnter (const juce::MouseEvent&) override { hover = true; repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { hover = false; repaint(); }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (onPressed) onPressed();
+        if (e.mods.isPopupMenu()) showMenu();
+    }
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        if (e.mods.isPopupMenu() || ! contains (e.getPosition())) return;
+        auto t = controller.session().findTrack (trackId);
+        if (t == nullptr) return;
+        if (auto slot = icons::iconSlot (*t)) controller.togglePluginEditor (slot->id);
+    }
+
+private:
+    static juce::String channelName (const TrackModel& t) { return icons::kindName (icons::channelKind (t.kind)); }
+
+    void showMenu()
+    {
+        auto t = controller.session().findTrack (trackId);
+        if (t == nullptr) return;
+        const auto key = icons::IconCache::overrideKey (*t);
+        const auto current = icons::IconCache::get().override (key);
+        juce::Component::SafePointer<PluginIconButton> self (this);
+        enum { chooseId = 1000, autoId = 1001 };
+
+        juce::PopupMenu m;
+        const auto& all = icons::allKinds();
+        for (size_t i = 0; i < all.size(); ++i) {
+            juce::PopupMenu::Item item (icons::kindName (all[i]));
+            item.itemID = 1 + (int) i;
+            item.image = icons::makeDrawable (all[i]);
+            item.setTicked (current && *current == "builtin:" + icons::kindName (all[i]));
+            m.addItem (std::move (item));
+            if (all[i] == icons::Kind::Organ || all[i] == icons::Kind::Effect) m.addSeparator();
+        }
+        m.addSeparator();
+        m.addItem (chooseId, "Choose Image...", true, current && ! current->startsWith ("builtin:"));
+        m.addItem (autoId, "Automatic", true, ! current.has_value());
+
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this),
+                         [self, key, all] (int result) {
+            if (self == nullptr || result == 0) return;
+            auto& cache = icons::IconCache::get();
+            if (result == autoId) { cache.setOverride (key, {}); }
+            else if (result == chooseId) {
+                auto chooser = std::make_shared<juce::FileChooser> ("Choose an icon image", juce::File(),
+                                                                    "*.png;*.jpg;*.jpeg;*.tiff;*.icns");
+                chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                      [self, key, chooser] (const juce::FileChooser& fc) {
+                    auto f = fc.getResult();
+                    if (self == nullptr || ! f.existsAsFile()) return;
+                    auto& ic = icons::IconCache::get();
+                    ic.setOverride (key, ic.importImage (f).getFullPathName());
+                    self->repaint();
+                });
+                return;
+            }
+            else if (result >= 1 && result <= (int) all.size())
+                cache.setOverride (key, "builtin:" + icons::kindName (all[(size_t) result - 1]));
+            self->repaint();
+        });
+    }
+
+    EngineController& controller;
+    const Id trackId;
+    bool hover = false;
+};
+
+TrackHeader::~TrackHeader() = default;
+
 TrackHeader::TrackHeader (EngineController& c, Selection& s, PresetManager& p, Id id)
     : controller (c), selection (s), presets (p), trackId (id)
 {
+    iconButton = std::make_unique<PluginIconButton> (controller, trackId);
+    iconButton->onPressed = [this] { selection.select (trackId, kInvalidId); };
+    addAndMakeVisible (*iconButton);
     setSize (theme::stripWidth, headerHeight);
     refresh();
     poll();
@@ -58,12 +167,14 @@ void TrackHeader::refresh()
     } else if (t->kind == TrackKind::Bus) {
         line1 = "Sum";
     }
+    if (iconButton != nullptr) iconButton->refresh();
     repaint();
 }
 
 void TrackHeader::resized()
 {
-    const int bw = 30, gap = 4, y = 86, h = 28;
+    if (iconButton != nullptr) iconButton->setBounds (6, 10, 40, 40);
+    const int bw = 30, gap = 4, y = 110, h = 28;
     const bool full = kind == TrackKind::Audio || kind == TrackKind::Instrument;
     const int total = full ? bw * 3 + gap * 2 : bw * 2 + gap;
     int x = (getWidth() - total) / 2;
@@ -116,16 +227,18 @@ void TrackHeader::paint (juce::Graphics& g)
     g.setColour (sel ? (selection.loopId == kInvalidId ? juce::Colours::white : colour.withAlpha (0.8f)) : theme::outline);
     g.drawRoundedRectangle (b, 7.0f, sel ? 1.5f : 1.0f);
 
-    g.setColour (theme::text);
-    g.setFont (theme::font (16.0f, true));
-    g.drawText (nameText, 6, 10, getWidth() - 12, 20, juce::Justification::centredLeft, true);
+    // Row 1: icon + track kind; row 2: the name across the full width; rows 3-4: input info.
+    const int textX = 52;
     g.setColour (colour.withAlpha (0.9f));
     g.setFont (theme::font (13.0f, true));
-    g.drawText (kindText, 6, 30, getWidth() - 12, 16, juce::Justification::centredLeft, true);
+    g.drawFittedText (kindText, textX, 10, getWidth() - textX - 5, 40, juce::Justification::centredLeft, 2);
+    g.setColour (theme::text);
+    g.setFont (theme::font (16.0f, true));
+    g.drawText (nameText, 6, 54, getWidth() - 12, 20, juce::Justification::centredLeft, true);
     g.setColour (theme::textDim);
     g.setFont (theme::font (13.0f));
-    g.drawText (line1, 6, 46, getWidth() - 12, 16, juce::Justification::centredLeft, true);
-    g.drawText (line2, 6, 62, getWidth() - 12, 16, juce::Justification::centredLeft, true);
+    g.drawText (line1, 6, 74, getWidth() - 12, 16, juce::Justification::centredLeft, true);
+    g.drawText (line2, 6, 90, getWidth() - 12, 16, juce::Justification::centredLeft, true);
 
     auto drawBtn = [&] (juce::Rectangle<int> r, const juce::String& label, bool on, juce::Colour onCol) {
         if (r.isEmpty()) return;
