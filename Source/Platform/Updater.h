@@ -37,8 +37,9 @@ private:
     void showProgress (const juce::String& text);
     void closeProgress();
     void setProgress (double);
-    void promptRestart (juce::File stagedApp, juce::File workDir);
-    void install (const juce::File& stagedApp, const juce::File& workDir);
+    void promptRestart (juce::File stagedApp, juce::File workDir, juce::String sha);
+    void install (const juce::File& stagedApp, const juce::File& workDir, const juce::String& sha);
+    void cleanupAfterUpdate();
 
     std::function<bool()> canRestartSilently;
     std::shared_ptr<std::atomic<bool>> alive { std::make_shared<std::atomic<bool>> (true) };

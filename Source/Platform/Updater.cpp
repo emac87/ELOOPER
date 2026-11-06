@@ -1,6 +1,7 @@
 #include "Platform/Updater.h"
 #include "UI/Theme.h"
 #include "UI/LookAndFeel.h"
+#include "Engine/PluginHost.h"
 
 #if ! JUCE_WINDOWS
  #include <unistd.h>
@@ -38,6 +39,19 @@ namespace {
 
     bool isDevBuild() { return juce::String (ELOOPER_BUILD_SHA) == "dev" || juce::String (ELOOPER_BUILD_SHA).isEmpty(); }
 
+    // Update log: ~/Library/Logs/ELooper/update.log
+    void ulog (const juce::String& msg)
+    {
+        auto f = juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Logs/ELooper/update.log");
+        f.getParentDirectory().createDirectory();
+        if (f.getSize() > 512 * 1024) f.deleteFile();
+        f.appendText (juce::Time::getCurrentTime().toString (true, true, true, true) + "  " + msg + "\n");
+        DBG ("Updater: " << msg);
+    }
+
+    // Remembers which build we last tried to install, so a failed install can't loop.
+    juce::File attemptFile() { return PluginHost::appDataDir().getChildFile ("update-attempt.txt"); }
+
     juce::String shQuote (const juce::String& s) { return "'" + s.replace ("'", "'\\''") + "'"; }
 
     // Runs a process to completion with no piped output. Returns true on exit code 0.
@@ -66,6 +80,7 @@ struct Updater::Result {
     enum class Kind { UpToDate, Ready, Error } kind = Kind::Error;
     juce::String message;
     juce::File stagedApp, workDir;
+    juce::String sha;
 };
 
 // ---- progress window -------------------------------------------------------------------------
@@ -171,6 +186,14 @@ struct Updater::Worker : public juce::Thread {
         if (sha.isEmpty() || runId.isEmpty() || runId == "0")
             return fail (r, "Unexpected response from GitHub.");
         if (sha == juce::String (ELOOPER_BUILD_SHA)) { r.kind = Result::Kind::UpToDate; return; }
+        r.sha = sha;
+        {
+            const auto prev = juce::StringArray::fromLines (attemptFile().loadFileAsString());
+            if (prev.size() >= 2 && prev[0] == sha
+                && juce::Time::currentTimeMillis() - prev[1].getLargeIntValue() < 15 * 60 * 1000)
+                return fail (r, "Installing build " + sha.substring (0, 7) + " didn't take effect. See ~/Library/Logs/ELooper/update.log.");
+        }
+        ulog ("Update available: " + juce::String (ELOOPER_BUILD_SHA).substring (0, 7) + " -> " + sha.substring (0, 7));
         if (threadShouldExit()) return;
 
         // 2. Download.
@@ -259,6 +282,9 @@ bool Updater::isAutoUpdateEnabled()
 
 void Updater::checkOnLaunch()
 {
+   #if JUCE_MAC
+    if (! isScanChild()) cleanupAfterUpdate();
+   #endif
     if (! platformSupported() || isDevBuild() || isScanChild() || ! isAutoUpdateEnabled()) return;
     start (false);
 }
@@ -307,15 +333,15 @@ void Updater::onFinished (std::shared_ptr<Result> r)
         case Result::Kind::Ready:
             if (canRestartSilently && canRestartSilently()) {
                 showProgress ("Updating ELooper to the newest version…");
-                install (r->stagedApp, r->workDir);
+                install (r->stagedApp, r->workDir, r->sha);
             } else {
-                promptRestart (r->stagedApp, r->workDir);
+                promptRestart (r->stagedApp, r->workDir, r->sha);
             }
             break;
     }
 }
 
-void Updater::promptRestart (juce::File stagedApp, juce::File workDir)
+void Updater::promptRestart (juce::File stagedApp, juce::File workDir, juce::String sha)
 {
     auto flag = alive; auto* self = this;
     juce::AlertWindow::showAsync (juce::MessageBoxOptions()
@@ -323,62 +349,70 @@ void Updater::promptRestart (juce::File stagedApp, juce::File workDir)
                                       .withTitle ("Update ready")
                                       .withMessage ("A new version of ELooper is ready. Restart now to update? (Save your project first.)")
                                       .withButton ("Restart").withButton ("Later"),
-                                  [flag, self, stagedApp, workDir] (int r) {
-        if (r == 1 && flag->load()) self->install (stagedApp, workDir);
+                                  [flag, self, stagedApp, workDir, sha] (int r) {
+        if (r == 1 && flag->load()) self->install (stagedApp, workDir, sha);
         else workDir.deleteRecursively();   // "Later": the next launch will update
     });
 }
 
-void Updater::install (const juce::File& stagedApp, const juce::File& workDir)
+void Updater::install (const juce::File& stagedApp, const juce::File& workDir, const juce::String& sha)
 {
+    auto failInstall = [this, workDir] (const juce::String& msg) {
+        ulog ("Install failed: " + msg);
+        closeProgress();
+        ui::alert ("Update failed", msg + "\n\nYou can keep using this version. Details: ~/Library/Logs/ELooper/update.log");
+        workDir.deleteRecursively();
+    };
+
     auto current = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
     juce::File target = current;
     if (current.getFullPathName().contains ("/AppTranslocation/")
         || ! current.getParentDirectory().hasWriteAccess()
         || ! current.hasFileExtension ("app"))
         target = juce::File ("/Applications/ELooper.app");
+    ulog ("Installing " + stagedApp.getFullPathName() + " -> " + target.getFullPathName());
 
-    if (! target.getParentDirectory().hasWriteAccess()) {
+    if (! target.getParentDirectory().hasWriteAccess())
+        return failInstall ("ELooper can't write to " + target.getParentDirectory().getFullPathName() + ".");
+
+    // macOS lets us rename the bundle of the running app, so the swap happens here, while we
+    // can still report problems, rather than in a script after quitting.
+    const auto old = target.getSiblingFile ("ELooper.app.old");
+    if (old.exists()) runTool ({ "/bin/rm", "-rf", old.getFullPathName() }, 60000);
+    if (target.exists() && ! runTool ({ "/bin/mv", target.getFullPathName(), old.getFullPathName() }, 60000))
+        return failInstall ("Couldn't move the current version aside (permissions?).");
+    if (! runTool ({ "/bin/mv", stagedApp.getFullPathName(), target.getFullPathName() }, 60000)
+        && ! runTool ({ "/usr/bin/ditto", stagedApp.getFullPathName(), target.getFullPathName() }, 120000)) {
+        runTool ({ "/bin/mv", old.getFullPathName(), target.getFullPathName() }, 60000);   // put the old one back
+        return failInstall ("Couldn't put the new version in place.");
+    }
+    runTool ({ "/usr/bin/xattr", "-dr", "com.apple.quarantine", target.getFullPathName() }, 60000);
+    attemptFile().replaceWithText (sha + "\n" + juce::String (juce::Time::currentTimeMillis()));
+    ulog ("Swapped in new version; launching it");
+
+    // Start the new version (allowed to run alongside us for a moment), then quit.
+    if (! runTool ({ "/usr/bin/open", "-n", target.getFullPathName(), "--args", "--elooper-updated" }, 20000)) {
+        ulog ("open failed");
         closeProgress();
-        ui::alert ("Update failed", "ELooper can't write to " + target.getParentDirectory().getFullPathName() + ".");
+        ui::alert ("Update installed", "The new version is installed, but it couldn't be started automatically. "
+                                       "Quit ELooper and open it again from the Dock.");
         workDir.deleteRecursively();
         return;
     }
-
-    const auto script = workDir.getChildFile ("install.sh");
-    juce::String s;
-    s << "#!/bin/sh\n"
-      << "PID=" << juce::String ((int) getpid()) << "\n"
-      << "TARGET=" << shQuote (target.getFullPathName()) << "\n"
-      << "NEW=" << shQuote (stagedApp.getFullPathName()) << "\n"
-      << "WORK=" << shQuote (workDir.getFullPathName()) << "\n"
-      << "while kill -0 \"$PID\" 2>/dev/null; do sleep 0.2; done\n"
-      << "OLD=\"$TARGET.old-$$\"\n"
-      << "if [ -e \"$TARGET\" ]; then mv \"$TARGET\" \"$OLD\" || { open \"$TARGET\"; exit 1; }; fi\n"
-      << "if mv \"$NEW\" \"$TARGET\"; then\n"
-      << "  rm -rf \"$OLD\"\n"
-      << "else\n"
-      << "  [ -e \"$OLD\" ] && mv \"$OLD\" \"$TARGET\"\n"
-      << "fi\n"
-      << "open \"$TARGET\"\n"
-      << "rm -rf \"$WORK\"\n";
-    if (! script.replaceWithText (s)) {
-        closeProgress();
-        ui::alert ("Update failed", "Couldn't write the installer script.");
-        workDir.deleteRecursively();
-        return;
-    }
-
-    juce::ChildProcess launcher;
-    const auto cmd = "nohup /bin/sh " + shQuote (script.getFullPathName()) + " >/dev/null 2>&1 &";
-    if (! launcher.start (juce::StringArray { "/bin/sh", "-c", cmd }, 0)) {
-        closeProgress();
-        ui::alert ("Update failed", "Couldn't start the installer.");
-        workDir.deleteRecursively();
-        return;
-    }
-    launcher.waitForProcessToFinish (2000);
+    workDir.deleteRecursively();
+    ulog ("New version started; quitting old version");
     juce::JUCEApplicationBase::quit();
+}
+
+void Updater::cleanupAfterUpdate()
+{
+    // Remove the previous bundle left next to us by an update.
+    const auto current = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
+    const auto old = current.getSiblingFile ("ELooper.app.old");
+    if (old.exists()) {
+        ulog ("Removing previous version " + old.getFullPathName());
+        old.deleteRecursively();
+    }
 }
 
 } // namespace el

@@ -14,7 +14,12 @@ public:
     const juce::String getApplicationName() override    { return JUCE_APPLICATION_NAME_STRING; }
     const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
     // Plugin-scan helper processes are extra instances of this app.
-    bool moreThanOneInstanceAllowed() override          { return isScanChild(); }
+    // Plugin-scan helpers and a just-updated copy (which starts while the old one quits)
+    // are allowed to run alongside another instance.
+    bool moreThanOneInstanceAllowed() override
+    {
+        return isScanChild() || getCommandLineParameterArray().contains ("--elooper-updated");
+    }
 
     void initialise (const juce::String&) override
     {
