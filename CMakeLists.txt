@@ -59,8 +59,9 @@ file(GLOB ELOOPER_APP_SOURCES CONFIGURE_DEPENDS
     Source/Model/*.cpp Source/Engine/*.cpp Source/UI/*.cpp Source/Platform/*.cpp Source/Main.cpp)
 target_sources(ELooper PRIVATE ${ELOOPER_APP_SOURCES})
 if(APPLE)
-    target_sources(ELooper PRIVATE Source/Platform/Permissions_mac.mm)
-    target_link_libraries(ELooper PRIVATE "-framework AVFoundation")
+    file(GLOB ELOOPER_MAC_SOURCES CONFIGURE_DEPENDS Source/Platform/*.mm)
+    target_sources(ELooper PRIVATE ${ELOOPER_MAC_SOURCES})
+    target_link_libraries(ELooper PRIVATE "-framework AVFoundation" "-framework AudioToolbox" "-framework AppKit")
 endif()
 
 # Build identity for the auto-updater: CI builds carry their commit; local builds are "dev"
