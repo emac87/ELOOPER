@@ -27,6 +27,11 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+      - name: Ad-hoc sign app
+        # No Apple developer certificate: sign ad hoc so the bundle is valid on Apple Silicon.
+        run: |
+          codesign --force --deep --sign - build/ELooper_artefacts/Release/ELooper.app
+          codesign --verify --deep --strict --verbose=2 build/ELooper_artefacts/Release/ELooper.app
       - name: Package app
         run: ditto -c -k --keepParent build/ELooper_artefacts/Release/ELooper.app ELooper-macos.zip
 

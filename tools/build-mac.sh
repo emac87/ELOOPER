@@ -10,5 +10,6 @@ cmake -S . -B build-mac -G "$GEN" -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITE
 cmake --build build-mac --config Release -j "$(sysctl -n hw.ncpu)"
 ctest --test-dir build-mac --output-on-failure
 APP=build-mac/ELooper_artefacts/Release/ELooper.app
+codesign --force --deep --sign - "$APP"   # ad-hoc signature (no developer account needed)
 echo "Built: $APP"
 [ "${1:-}" = "--open" ] && open "$APP"
