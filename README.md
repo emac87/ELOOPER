@@ -51,7 +51,9 @@ The first build downloads JUCE and Ableton Link and takes a few minutes. On firs
 - A timeline page for arrangement. Place loops as clips, set a loop region, and use arrangement record to write the loops you launch into the timeline.
 
 **MIDI editing**
-- Piano roll and step sequencer for MIDI loops, with undo and redo.
+- Piano roll and step sequencer for MIDI loops, with undo and redo. Step lanes have per-step velocity and ratchet, and presets for scales, popular drum plug-ins and your own kits.
+- Audio loops keep their pitch on tempo changes (time-stretch), or follow it like tape (varispeed).
+- Plug-in delay compensation across tracks, sends and buses.
 
 **Control**
 - MIDI controller learn for Play/Stop, Record selected loop, Stop All and Tap Tempo, plus per-loop Trigger, Record and Stop.
@@ -109,8 +111,8 @@ There are two test suites:
 ## Known limitations
 
 - **Audio Units only.** VST2 and VST3 are not supported.
-- **No time-stretching.** Audio loops follow tempo changes by varispeed, which also changes their pitch.
-- **Plug-in delay compensation is not implemented.** Plug-in latency is measured and reported, but it is not compensated.
+- **Time-stretching is a real-time WSOLA stretcher.** It keeps pitch and stays locked to the beat, and is clean for moderate tempo changes; very large changes can sound grainy on sustained material. Each audio loop can be switched to varispeed instead.
+- **Plug-in delay compensation** lines up tracks, sends, buses and the metronome using each plug-in's reported latency, and re-aligns when a plug-in changes it. MIDI effects' latency is not counted.
 - **Automation is applied per audio block**, so it is block-rate rather than sample-accurate. Internal mixer parameters are smoothed.
 - **Linux builds exist for CI only.** The Linux build checks that the code compiles and the tests pass. It is not a supported way to run ELooper.
 

@@ -213,9 +213,12 @@ bool MidiEditor::sameClip (const MidiClip& a, const MidiClip& b)
     {
         const auto &x = a.notes[i], &y = b.notes[i];
         if (x.start != y.start || x.length != y.length || x.pitch != y.pitch || x.velocity != y.velocity
-            || x.channel != y.channel || x.muted != y.muted)
+            || x.channel != y.channel || x.muted != y.muted || x.ratchet != y.ratchet)
             return false;
     }
+    if (a.stepMapName != b.stepMapName || a.stepLanes.size() != b.stepLanes.size()) return false;
+    for (size_t i = 0; i < a.stepLanes.size(); ++i)
+        if (a.stepLanes[i].pitch != b.stepLanes[i].pitch || a.stepLanes[i].name != b.stepLanes[i].name) return false;
     return true;
 }
 

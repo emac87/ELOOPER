@@ -38,10 +38,12 @@ public:
     // Tries to enable every output bus as stereo (multi-out instruments). Returns total output channels.
     static int enableMultiOut (juce::AudioPluginInstance& p);
 
-    // Plugin editor windows (one per slot, floating, always-on-top optional).
+    // Plugin editor windows (one per slot). They float above ELooper while it is the active app.
+    // hideEditor keeps the window (and its position) for the next show; closeEditor destroys it.
     void showEditor (const PluginSlotPtr& slot);
+    void hideEditor (Id slotId);
     void closeEditor (Id slotId);
-    bool isEditorOpen (Id slotId) const;
+    bool isEditorOpen (Id slotId) const;   // true while the window is visible
     void closeAllEditors();
 
     static juce::File appDataDir();

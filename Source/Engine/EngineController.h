@@ -9,6 +9,8 @@
 
 namespace el {
 
+struct PluginNode;
+
 class AudioEngine;
 class LinkClock;
 
@@ -45,6 +47,7 @@ struct TransportStatus {
     double sampleRate = 0;
     int blockSize = 0;
     int latencyIn = 0, latencyOut = 0;
+    int pluginLatency = 0;       // plug-in delay compensation applied to the mix, samples
 };
 
 struct MeterStatus { float left = 0, right = 0, input = 0; bool inputAudible = true; };
@@ -118,7 +121,8 @@ public:
     void movePlugin (Id slotId, FxChain chain, int newIndex);
     void setPluginBypass (Id slotId, bool bypassed);
     void showPluginEditor (Id slotId);
-    void togglePluginEditor (Id slotId);   // open, or close if already open
+    void togglePluginEditor (Id slotId);   // show, or hide if already showing
+    bool isPluginEditorOpen (Id slotId) const { return plugins.isEditorOpen (slotId); }
     juce::MemoryBlock getPluginState (Id slotId) const;
     void setPluginState (Id slotId, const juce::MemoryBlock& state);
     // Multi-out: creates AuxOut tracks for every extra stereo pair of the track's instrument.
@@ -225,6 +229,8 @@ private:
     int maxBlock() const;
     std::shared_ptr<LoopRt> makeLoopRt (Id loopId, Id trackId, LoopType type);
     void rebuildGraph();
+    static int pluginLatency (const PluginNode&);
+    int64_t latencySignature() const;
     void publishTransport();
     void deviceChanged();
     void retireSession (std::unique_ptr<Session> old);

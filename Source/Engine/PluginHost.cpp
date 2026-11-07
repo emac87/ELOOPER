@@ -171,6 +171,23 @@ struct PluginHost::Impl {
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>> (true);
     std::unique_ptr<ScanThread> scanThread;
     std::map<Id, std::unique_ptr<PluginWindow>> windows;
+
+    // Keeps plugin windows floating above the main window while ELooper is in front, and lets
+    // them drop behind other apps when it is not (like the plug-in windows of other DAWs).
+    struct FloatTimer : juce::Timer {
+        explicit FloatTimer (Impl& i) : impl (i) {}
+        void timerCallback() override
+        {
+            const bool front = juce::Process::isForegroundProcess();
+            if (front == wasFront) return;
+            wasFront = front;
+            for (auto& [id, w] : impl.windows)
+                if (w != nullptr) w->setAlwaysOnTop (front);
+        }
+        Impl& impl;
+        bool wasFront = false;
+    };
+    FloatTimer floatTimer { *this };
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -312,24 +329,36 @@ void PluginHost::showEditor (const PluginSlotPtr& slot)
     auto it = impl->windows.find (slot->id);
     if (it != impl->windows.end())
     {
+        it->second->setVisible (true);
+        it->second->setAlwaysOnTop (juce::Process::isForegroundProcess());
         it->second->toFront (true);
         return;
     }
     auto alive = impl->alive;
     auto* self = this;
-    impl->windows[slot->id] = std::make_unique<PluginWindow> (slot, [alive, self] (Id id)
+    auto w = std::make_unique<PluginWindow> (slot, [alive, self] (Id id)
     {
-        // Delete the window after the close-button handler returns.
+        // Hide (not delete) after the close-button handler returns, so it reopens in place.
         juce::MessageManager::callAsync ([alive, self, id]
         {
-            if (alive->load()) self->closeEditor (id);
+            if (alive->load()) self->hideEditor (id);
         });
     });
+    w->setAlwaysOnTop (juce::Process::isForegroundProcess());
+    impl->windows[slot->id] = std::move (w);
+    if (! impl->floatTimer.isTimerRunning()) impl->floatTimer.startTimer (300);
+}
+
+void PluginHost::hideEditor (Id slotId)
+{
+    auto it = impl->windows.find (slotId);
+    if (it != impl->windows.end() && it->second != nullptr) it->second->setVisible (false);
 }
 
 bool PluginHost::isEditorOpen (Id slotId) const
 {
-    return impl->windows.count (slotId) > 0;
+    auto it = impl->windows.find (slotId);
+    return it != impl->windows.end() && it->second != nullptr && it->second->isVisible();
 }
 
 void PluginHost::closeEditor (Id slotId)
@@ -339,6 +368,7 @@ void PluginHost::closeEditor (Id slotId)
 
 void PluginHost::closeAllEditors()
 {
+    impl->floatTimer.stopTimer();
     impl->windows.clear();
 }
 

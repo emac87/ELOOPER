@@ -1,6 +1,5 @@
 #include "UI/PluginIcons.h"
-#include "Engine/PluginHost.h"
-#include "Platform/PluginIconMac.h"
+#include <map>
 
 namespace el::icons {
 
@@ -95,6 +94,11 @@ namespace {
                 poly (L, { P (12, 12), P (16, 7) });
                 dot (F, 12, 12, 1.5f);
                 break;
+            case Kind::MidiFx:   // rising arpeggio: three notes on a staircase
+                dot (F, 6, 17, 2.4f); dot (F, 12, 12, 2.4f); dot (F, 18, 7, 2.4f);
+                poly (L, { P (8.2f, 17), P (8.2f, 9) }); poly (L, { P (14.2f, 12), P (14.2f, 4) }); poly (L, { P (20.2f, 7), P (20.2f, 2) });
+                poly (L, { P (3, 21), P (21, 21) });
+                break;
             case Kind::Audio:
                 L.addRoundedRectangle (9.0f, 3.0f, 6.0f, 11.0f, 3.0f);
                 L.addCentredArc (12.0f, 11.0f, 6.5f, 6.5f, 0.0f, pi / 2, 3 * pi / 2, true);
@@ -157,7 +161,7 @@ const std::vector<Kind>& allKinds()
 {
     static const std::vector<Kind> k { Kind::Synth, Kind::Piano, Kind::Drums, Kind::Sampler, Kind::Bass, Kind::Strings, Kind::Organ,
                                        Kind::Reverb, Kind::Delay, Kind::Eq, Kind::Compressor, Kind::Distortion, Kind::Modulation, Kind::Effect,
-                                       Kind::Audio, Kind::Midi, Kind::Bus, Kind::Master, Kind::AuxOut };
+                                       Kind::MidiFx, Kind::Audio, Kind::Midi, Kind::Bus, Kind::Master, Kind::AuxOut };
     return k;
 }
 
@@ -178,6 +182,7 @@ juce::String kindName (Kind k)
         case Kind::Distortion: return "Distortion";
         case Kind::Modulation: return "Modulation";
         case Kind::Effect: return "Effect";
+        case Kind::MidiFx: return "MIDI Effect";
         case Kind::Audio: return "Audio";
         case Kind::Midi: return "MIDI";
         case Kind::Bus: return "Bus";
@@ -212,7 +217,8 @@ Kind guessKind (const juce::PluginDescription& d)
     auto has = [&] (std::initializer_list<const char*> kws) { return anyKeyword (text, tokens, kws); };
 
     if (d.isInstrument) {
-        if (has ({ "drum", "kit", "beat", "808", "909", "perc" })) return Kind::Drums;
+        if (has ({ "drum", "kit", "beat", "808", "909", "perc", "tekno", "battery", "superior", "ezdrummer",
+                   "addictive", "bfd", "ssd", "groove", "kick", "snare" })) return Kind::Drums;
         if (has ({ "sampler", "sample", "kontakt" })) return Kind::Sampler;
         if (has ({ "piano", "keys", "rhodes", "wurli", "ep" })) return Kind::Piano;
         if (has ({ "organ", "b3" })) return Kind::Organ;
@@ -226,6 +232,7 @@ Kind guessKind (const juce::PluginDescription& d)
     if (has ({ "comp", "limit", "dynamic", "gate" })) return Kind::Compressor;
     if (has ({ "dist", "drive", "satur", "fuzz", "amp" })) return Kind::Distortion;
     if (has ({ "chorus", "flang", "phas", "trem", "vibrato", "mod" })) return Kind::Modulation;
+    if (has ({ "arp", "chord", "midi", "sequenc", "scaler" })) return Kind::MidiFx;
     return Kind::Effect;
 }
 
@@ -246,108 +253,27 @@ PluginSlotPtr iconSlot (const TrackModel& t)
     if (t.instrument != nullptr) return t.instrument;
     if (! t.preFx.empty()) return t.preFx.front();
     if (! t.postFx.empty()) return t.postFx.front();
+    if (! t.midiFx.empty()) return t.midiFx.front();
     return nullptr;
 }
 
-// ---- IconCache -----------------------------------------------------------------------------
-IconCache& IconCache::get()
+Kind slotKind (const TrackModel& t, const PluginSlot& s)
 {
-    static IconCache cache;
-    return cache;
+    for (auto& m : t.midiFx) if (m.get() == &s) return Kind::MidiFx;
+    return guessKind (s.description);
 }
 
-juce::Image IconCache::realIcon (const juce::PluginDescription& d)
+Kind trackKind (const TrackModel& t)
 {
-    const auto key = d.createIdentifierString();
-    auto it = real.find (key);
-    if (it != real.end()) return it->second;
-    return real.emplace (key, loadAudioUnitIcon (d)).first->second;
+    if (auto s = iconSlot (t)) return slotKind (t, *s);
+    return channelKind (t.kind);
 }
 
-void IconCache::loadOverrides()
+void drawIcon (juce::Graphics& g, juce::Rectangle<float> area, Kind k, juce::Colour tint)
 {
-    if (loaded) return;
-    loaded = true;
-    if (auto xml = juce::XmlDocument::parse (PluginHost::appDataDir().getChildFile ("plugin-icons.xml")))
-        for (auto* e : xml->getChildWithTagNameIterator ("Icon"))
-            if (e->getStringAttribute ("key").isNotEmpty() && e->getStringAttribute ("value").isNotEmpty())
-                overrides[e->getStringAttribute ("key")] = e->getStringAttribute ("value");
-}
-
-void IconCache::saveOverrides() const
-{
-    juce::XmlElement root ("Icons");
-    for (auto& [k, v] : overrides) {
-        auto* e = root.createNewChildElement ("Icon");
-        e->setAttribute ("key", k);
-        e->setAttribute ("value", v);
-    }
-    root.writeTo (PluginHost::appDataDir().getChildFile ("plugin-icons.xml"));
-}
-
-std::optional<juce::String> IconCache::override (const juce::String& key)
-{
-    loadOverrides();
-    auto it = overrides.find (key);
-    if (it == overrides.end()) return std::nullopt;
-    return it->second;
-}
-
-void IconCache::setOverride (const juce::String& key, const juce::String& value)
-{
-    loadOverrides();
-    if (value.isEmpty()) overrides.erase (key); else overrides[key] = value;
-    saveOverrides();
-}
-
-juce::String IconCache::overrideKey (const TrackModel& t)
-{
-    if (auto s = iconSlot (t))
-        if (s->description.name.isNotEmpty() || s->description.fileOrIdentifier.isNotEmpty())
-            return s->description.createIdentifierString();
-    return "track:" + juce::String ((int) t.kind);
-}
-
-juce::File IconCache::importImage (const juce::File& source) const
-{
-    auto dir = PluginHost::appDataDir().getChildFile ("Icons");
-    dir.createDirectory();
-    auto dest = dir.getNonexistentChildFile (source.getFileNameWithoutExtension(), source.getFileExtension(), false);
-    return source.copyFileTo (dest) ? dest : source;
-}
-
-juce::Image IconCache::fileImage (const juce::String& path)
-{
-    auto it = files.find (path);
-    if (it != files.end()) return it->second;
-    return files.emplace (path, juce::ImageFileFormat::loadFrom (juce::File (path))).first->second;
-}
-
-void IconCache::drawIcon (juce::Graphics& g, juce::Rectangle<float> area, const TrackModel& t, juce::Colour tint)
-{
-    auto drawKind = [&] (Kind k) {
-        g.setColour (tint);
-        g.fillPath (iconPath (k), juce::RectanglePlacement (juce::RectanglePlacement::centred)
-                                      .getTransformToFit (juce::Rectangle<float> (0, 0, 24, 24), area));
-    };
-    auto drawImg = [&] (const juce::Image& img) {
-        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-        g.drawImage (img, area, juce::RectanglePlacement::centred);
-    };
-
-    if (auto ov = override (overrideKey (t))) {
-        if (ov->startsWith ("builtin:")) {
-            if (auto k = kindFromName (ov->fromFirstOccurrenceOf ("builtin:", false, false))) { drawKind (*k); return; }
-        } else if (auto img = fileImage (*ov); img.isValid()) {
-            drawImg (img);
-            return;
-        }
-    }
-    if (auto slot = iconSlot (t)) {
-        if (auto img = realIcon (slot->description); img.isValid()) { drawImg (img); return; }
-        if (slot->description.name.isNotEmpty()) { drawKind (guessKind (slot->description)); return; }
-    }
-    drawKind (channelKind (t.kind));
+    g.setColour (tint);
+    g.fillPath (iconPath (k), juce::RectanglePlacement (juce::RectanglePlacement::centred)
+                                  .getTransformToFit (juce::Rectangle<float> (0, 0, 24, 24), area));
 }
 
 } // namespace el::icons

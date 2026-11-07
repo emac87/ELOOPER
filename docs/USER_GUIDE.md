@@ -66,6 +66,8 @@ A new session starts with one audio track and one instrument track.
 
 **Adding tracks:** click the **+** button at the end of the track row and choose Audio, Instrument or Bus. You can also use the **Track** menu (Add Audio Track, Add Instrument Track, Add Bus).
 
+**Plug-in icon:** the icon at the top left of each track header shows the type of plug-in on the track (synth, drums, sampler, keys, EQ, compressor, reverb, delay, MIDI effect and so on), or the channel type when the track has no plug-in. Click it to show or hide that plug-in's window; the icon lights up while a window is open. Right-click it to show or hide any plug-in on the track, or all of them at once. Plug-in windows float above ELooper while it is the active app.
+
 **Adding loops:** each track column has a **+** button that opens a menu of Audio, MIDI or Automation loops. Below it are the **+A**, **+M** and **+Auto** buttons for the same loop types. The audio and MIDI buttons are disabled on tracks where they do not apply.
 
 **Track header:** the header at the top of each column shows the track name, input or instrument, and output. Its buttons are:
@@ -125,6 +127,7 @@ Once a loop has been recorded, an audio track in Auto monitor mutes its live inp
 - **Record Length**: Master, 1, 2, 4, 8 or 16 bars, or Free.
 - **After Record**: Play, Overdub or Stop.
 - **Play Mode**: Loop or One Shot.
+- **Tempo Changes**: Keep Pitch (time-stretch, the default) or Change Pitch (varispeed, like speeding up tape). Audio loops only.
 - **Record Mode**: Replace, Take Folder, or Take Folder + Cycle.
 - **Overdub Feedback**: 100%, 90%, 75% or 50%. Lower values let the new layer replace more of the old material.
 - **Takes**: select a take, or delete one.
@@ -163,7 +166,12 @@ To edit a MIDI loop, double-click it, or right-click and choose **Edit MIDI**. T
 - Keys: `⌘A` selects all notes, `⌘D` duplicates the selection, `Q` quantises the selection, `Delete` or `Backspace` removes it, and the arrow keys move it. Shift with up or down moves by an octave.
 - Right-click a note for **Delete**, **Mute / Unmute** and **Velocity**.
 
-**Step Seq** is a step sequencer. Each row is a drum sound or a note, and each column is a step. Click or drag across cells to turn steps on and off. Each row header has a mute button and a remove button. The **+** row at the bottom adds a row from the **Drums** or **Notes** menu. Right-click a step to change its velocity.
+**Step Seq** is a step sequencer. Each lane (row) is a drum sound or a note, and each column is a step. Click or drag across cells to turn steps on and off. Each lane header has a mute button and a remove button. **+ Add lane** at the bottom adds a lane from the **Drums (GM)** list or any note.
+
+- **Velocity and ratchet per step:** right-drag a step up or down to set its velocity, or right-click it for the **Velocity** and **Ratchet** menus. A ratchet re-triggers the step 2-8 times inside its length (drawn as dividers in the cell). The bar along the bottom of a step shows its velocity. **Ratchet** at the top left sets the ratchet for new steps; **Vel** in the header sets their velocity.
+- **Lane menu:** right-click a lane name for **Change note**, **Rename lane...** (or double-click the name), **Velocity (all steps)** (set, ramp up/down, accent on the beat, humanize), **Ratchet (all steps)**, **Fill** (every 1/2/4/8 steps), **Shift** left/right, **Copy / Paste / Clear lane**, **Move up / down**, mute and remove.
+- **Lanes menu** (top left): load a lane preset. **Drum maps** has presets named for Baby Audio Tekno (all 18 voices on C1-F2), Kontakt kits (Eloy Drums, Krimh / Trivium, Extinction Level Event, GetGood, Studio Drummer), Superior Drummer, EZdrummer, Addictive Drums, 16 chromatic pads (Battery, Drum Rack, MPC, Maschine), Logic's drum kits and General MIDI. The acoustic-kit presets use the GM note layout those libraries accept for the core kit; if a lane stays silent, set the plug-in's MIDI map to GM or use **Change note** on that lane. **Scales** builds lanes for one octave of a scale (major, minor, modes, pentatonics, blues, harmonic and melodic minor, Phrygian dominant, Hungarian minor and more) from any root. **My presets** saves your current lanes (names and notes), optionally with the pattern, and loads them back; they are stored in Application Support/ELooper/StepPresets. **Transpose all lanes**, **Reset lanes to automatic** and **Clear all steps** are there too.
+- The lane layout is saved with the loop.
 
 Undo and redo work in both tabs: `⌘Z` for undo, and `Shift`+`⌘Z` or `⌘Y` for redo.
 

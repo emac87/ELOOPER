@@ -176,6 +176,10 @@ static void testSaveLoadRoundTrip() {
     const Id inst = firstTrack (c, TrackKind::Instrument);
     const Id mloop = c.addLoop (inst, LoopType::Midi);
     MidiClip clip; clip.lengthBeats = 8; clip.notes.push_back ({ 1, 0.5, 64, 90, 1, false });
+    clip.notes[0].ratchet = 3;
+    clip.stepLanes.push_back ({ 64, "Hat A" });
+    clip.stepLanes.push_back ({ 36, "" });
+    clip.stepMapName = "Tekno (18 voices)";
     c.setMidiClip (mloop, clip);
     AutomationOwner owner { track, loop };
     const int lane = c.addAutomationLane (owner, { ParamKind::Volume, 0, -1 });
@@ -215,6 +219,12 @@ static void testSaveLoadRoundTrip() {
     if (after.getNumSamples() == before.getNumSamples() && after.getNumSamples() > 1000)
         CHECK (std::abs (after.getSample (0, 1000) - before.getSample (0, 1000)) < 1e-6f);
     CHECK (c2.midiClip (mloop) && c2.midiClip (mloop)->notes.size() == 1 && c2.midiClip (mloop)->notes[0].pitch == 64);
+    if (auto* mc = c2.midiClip (mloop)) {
+        CHECK (mc->notes.size() == 1 && mc->notes[0].ratchet == 3);
+        CHECK (mc->stepLanes.size() == 2 && mc->stepLanes[0].pitch == 64 && mc->stepLanes[0].name == "Hat A");
+        CHECK (mc->stepLanes.size() == 2 && mc->stepLanes[1].pitch == 36 && mc->stepLanes[1].name.empty());
+        CHECK (mc->stepMapName == "Tekno (18 voices)");
+    }
     CHECK (c2.session().timeline.size() == 1);
     CHECK (std::abs (c2.session().transport.tempo - 100.0) < 1e-6);
     CHECK (c2.loopStatus (loop).numTakes == 1 && c2.loopStatus (loop).state == LoopState::Stopped);

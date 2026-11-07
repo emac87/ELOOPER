@@ -56,6 +56,7 @@ struct LoopSettings {
     RecordMode   recordMode    = RecordMode::Replace;
     bool         cycleTakes    = false;   // TakeFolder: keep recording, one take per cycle
     float        overdubFeedback = 1.0f;  // 1 = keep old material fully while overdubbing
+    bool         varispeed     = false;   // tempo changes: false = time-stretch (keep pitch), true = tape-style
 };
 
 // What an automation lane / controller mapping drives. Values are always normalised 0..1

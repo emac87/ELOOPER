@@ -27,6 +27,7 @@ void writeLoopSettings (juce::XmlElement& e, const LoopSettings& s)
     e.setAttribute ("recordBars", (int) s.recordBars);
     e.setAttribute ("afterRecord", (int) s.afterRecord);
     e.setAttribute ("playMode", (int) s.playMode);
+    e.setAttribute ("varispeed", s.varispeed);
     e.setAttribute ("recordMode", (int) s.recordMode);
     e.setAttribute ("cycleTakes", s.cycleTakes);
     setF (e, "overdubFeedback", s.overdubFeedback);
@@ -41,6 +42,7 @@ LoopSettings readLoopSettings (const juce::XmlElement& e)
     s.recordBars    = (int16_t) e.getIntAttribute ("recordBars", s.recordBars);
     s.afterRecord   = getEnum (e, "afterRecord", s.afterRecord, (int) AfterRecord::Stop);
     s.playMode      = getEnum (e, "playMode", s.playMode, (int) PlayMode::OneShot);
+    s.varispeed     = e.getBoolAttribute ("varispeed", false);
     s.recordMode    = getEnum (e, "recordMode", s.recordMode, (int) RecordMode::TakeFolder);
     s.cycleTakes    = e.getBoolAttribute ("cycleTakes", s.cycleTakes);
     s.overdubFeedback = (float) e.getDoubleAttribute ("overdubFeedback", s.overdubFeedback);
@@ -194,6 +196,14 @@ void writeMidiTake (juce::XmlElement& parent, const MidiClip& clip)
         ne->setAttribute ("velocity", (int) n.velocity);
         ne->setAttribute ("channel", (int) n.channel);
         ne->setAttribute ("muted", n.muted);
+        if (n.ratchet > 1) ne->setAttribute ("ratchet", (int) n.ratchet);
+    }
+    if (! clip.stepMapName.empty()) e->setAttribute ("stepMap", juce::String (clip.stepMapName));
+    for (const auto& l : clip.stepLanes)
+    {
+        auto* le = e->createNewChildElement ("LANE");
+        le->setAttribute ("pitch", (int) l.pitch);
+        le->setAttribute ("name", juce::String (l.name));
     }
     for (const auto& c : clip.controllers)
     {
@@ -220,7 +230,16 @@ MidiClip readMidiTake (const juce::XmlElement& e)
         n.velocity = (uint8_t) juce::jlimit (0, 127, ne->getIntAttribute ("velocity", 100));
         n.channel = (uint8_t) juce::jlimit (1, 16, ne->getIntAttribute ("channel", 1));
         n.muted = ne->getBoolAttribute ("muted");
+        n.ratchet = (uint8_t) juce::jlimit (1, 8, ne->getIntAttribute ("ratchet", 1));
         clip.notes.push_back (n);
+    }
+    clip.stepMapName = e.getStringAttribute ("stepMap").toStdString();
+    for (auto* le : e.getChildWithTagNameIterator ("LANE"))
+    {
+        StepLane l;
+        l.pitch = (uint8_t) juce::jlimit (0, 127, le->getIntAttribute ("pitch", 36));
+        l.name = le->getStringAttribute ("name").toStdString();
+        clip.stepLanes.push_back (l);
     }
     for (auto* ce : e.getChildWithTagNameIterator ("CC"))
     {

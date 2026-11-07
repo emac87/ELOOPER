@@ -266,6 +266,11 @@ void LoopCell::showMenu()
     am.add (pm, "One Shot", edit ([] (LoopSettings& s) { s.playMode = PlayMode::OneShot; }), cur.playMode == PlayMode::OneShot);
     m.addSubMenu ("Play Mode", pm);
 
+    juce::PopupMenu tc;
+    am.add (tc, "Keep Pitch (time-stretch)", edit ([] (LoopSettings& s) { s.varispeed = false; }), ! cur.varispeed);
+    am.add (tc, "Change Pitch (varispeed)", edit ([] (LoopSettings& s) { s.varispeed = true; }), cur.varispeed);
+    m.addSubMenu ("Tempo Changes", tc);
+
     juce::PopupMenu rm;
     am.add (rm, "Replace", edit ([] (LoopSettings& s) { s.recordMode = RecordMode::Replace; s.cycleTakes = false; }),
             cur.recordMode == RecordMode::Replace);

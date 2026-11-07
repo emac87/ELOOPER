@@ -202,9 +202,12 @@ void AudioEngine::render (const float* const* in, int numIn, float* const* out, 
         }
         wasPlaying = t.playing;
 
+        // Everything the player hears is late by the device output latency plus the plug-in
+        // latency of the mix (PDC), so material recorded against it is shifted back by both.
         loopCtx.recordLatency = std::max (0, latIn.load (std::memory_order_relaxed) + latOut.load (std::memory_order_relaxed)
-                                                 + latencyOffset.load (std::memory_order_relaxed));
-        loopCtx.midiLatency = latOut.load (std::memory_order_relaxed);
+                                                 + latencyOffset.load (std::memory_order_relaxed) + g->totalLatency);
+        loopCtx.midiLatency = latOut.load (std::memory_order_relaxed) + g->totalLatency;
+        pluginLatency.store (g->totalLatency, std::memory_order_relaxed);
 
         processCommands (t);
         updateBounces (*g, t);
@@ -225,7 +228,14 @@ void AudioEngine::render (const float* const* in, int numIn, float* const* out, 
             const int chR = outputMap[hw + 1] >= 0 ? outputMap[hw + 1] : ch + 1;
             if (ch < numOut && subOut[ch] != nullptr) juce::FloatVectorOperations::copy (subOut[ch], m.output.getReadPointer (0), n);
             if (chR < numOut && subOut[chR] != nullptr) juce::FloatVectorOperations::copy (subOut[chR], m.output.getReadPointer (1), n);
-            if (ts->metronome && t.playing) renderMetronome (subOut, numOut, ch, t);
+            const bool click = ts->metronome && t.playing;
+            if ((click || g->totalLatency > 0) && g->metro.getNumSamples() >= n) {
+                float* mb = g->metro.getWritePointer (0);
+                renderMetronome (mb, t, click);
+                g->metroDelay.process (mb, n);   // line the click up with the delayed mix
+                if (ch < numOut && subOut[ch] != nullptr) juce::FloatVectorOperations::add (subOut[ch], mb, n);
+                if (chR != ch && chR < numOut && subOut[chR] != nullptr) juce::FloatVectorOperations::add (subOut[chR], mb, n);
+            }
         }
 
         statusBeat.store (t.beatEnd(), std::memory_order_relaxed);
@@ -494,11 +504,18 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
             juce::AudioBuffer<float> view (n.work.getArrayOfWritePointers(), std::max (2, chans), ns);
             const juce::ScopedTryLock lock (n.instrument.proc->getCallbackLock());
             if (lock.isLocked() && ! n.instrument.proc->isSuspended()) n.instrument.proc->processBlock (view, n.midi);
-            // Extra output pairs feed AuxOut tracks.
-            for (int child : n.auxChildren) {
-                auto& c = g.nodes[(size_t) child];
+            // Extra output pairs feed AuxOut tracks (padded by PDC where needed).
+            for (size_t k = 0; k < n.auxChildren.size(); ++k) {
+                auto& c = g.nodes[(size_t) n.auxChildren[k]];
                 const int ch0 = c.auxPair * 2;
-                if (ch0 + 1 < chans) {
+                if (ch0 + 1 >= chans) continue;
+                if (k < n.auxDelay.size() && n.auxDelay[k].delay() > 0) {
+                    n.tap.copyFrom (0, 0, n.work, ch0, 0, ns);
+                    n.tap.copyFrom (1, 0, n.work, ch0 + 1, 0, ns);
+                    n.auxDelay[k].process (n.tap.getWritePointer (0), n.tap.getWritePointer (1), ns);
+                    c.bus.addFrom (0, 0, n.tap, 0, 0, ns);
+                    c.bus.addFrom (1, 0, n.tap, 1, 0, ns);
+                } else {
                     c.bus.addFrom (0, 0, n.work, ch0, 0, ns);
                     c.bus.addFrom (1, 0, n.work, ch0 + 1, 0, ns);
                 }
@@ -567,13 +584,22 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
     rampGain (n.work.getWritePointer (1), ns, mu0, n.smoothMute);
 
     auto doSends = [&] (bool pre) {
-        for (auto& s : n.sends) {
+        for (size_t k = 0; k < n.sends.size(); ++k) {
+            auto& s = n.sends[k];
             if (s.preFader != pre || s.destIndex < 0 || s.sendIndex >= kMaxSends) continue;
             const float target = pm::volumeToGain (rt.sendLevel[s.sendIndex].load (std::memory_order_relaxed));
             const float s0 = n.smoothSend[s.sendIndex]; smoothTowards (n.smoothSend[s.sendIndex], target, ns);
             auto& dest = g.nodes[(size_t) s.destIndex].bus;
-            addRamp (dest.getWritePointer (0), n.work.getReadPointer (0), ns, s0, n.smoothSend[s.sendIndex]);
-            addRamp (dest.getWritePointer (1), n.work.getReadPointer (1), ns, s0, n.smoothSend[s.sendIndex]);
+            const float* srcL = n.work.getReadPointer (0);
+            const float* srcR = n.work.getReadPointer (1);
+            if (k < (size_t) kMaxSends && n.sendDelay[k].delay() > 0) {
+                n.tap.copyFrom (0, 0, n.work, 0, 0, ns);
+                n.tap.copyFrom (1, 0, n.work, 1, 0, ns);
+                n.sendDelay[k].process (n.tap.getWritePointer (0), n.tap.getWritePointer (1), ns);
+                srcL = n.tap.getReadPointer (0); srcR = n.tap.getReadPointer (1);
+            }
+            addRamp (dest.getWritePointer (0), srcL, ns, s0, n.smoothSend[s.sendIndex]);
+            addRamp (dest.getWritePointer (1), srcR, ns, s0, n.smoothSend[s.sendIndex]);
         }
     };
     doSends (true);
@@ -593,15 +619,26 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
     n.output.copyFrom (1, 0, n.work, 1, 0, ns);
     if (n.outputIndex >= 0) {
         auto& dest = g.nodes[(size_t) n.outputIndex].bus;
-        dest.addFrom (0, 0, n.output, 0, 0, ns);
-        dest.addFrom (1, 0, n.output, 1, 0, ns);
+        if (n.outDelay.delay() > 0) {
+            // Padded copy for the mix; `output` itself stays undelayed for meters and resampling.
+            n.tap.copyFrom (0, 0, n.output, 0, 0, ns);
+            n.tap.copyFrom (1, 0, n.output, 1, 0, ns);
+            n.outDelay.process (n.tap.getWritePointer (0), n.tap.getWritePointer (1), ns);
+            dest.addFrom (0, 0, n.tap, 0, 0, ns);
+            dest.addFrom (1, 0, n.tap, 1, 0, ns);
+        } else {
+            dest.addFrom (0, 0, n.output, 0, 0, ns);
+            dest.addFrom (1, 0, n.output, 1, 0, ns);
+        }
     }
     meterStore (rt.peakL, peakOf (n.output.getReadPointer (0), ns));
     meterStore (rt.peakR, peakOf (n.output.getReadPointer (1), ns));
 }
 
 // ---- metronome ---------------------------------------------------------------------------
-void AudioEngine::renderMetronome (float* const* out, int numOut, int ch, const BlockTime& t) {
+void AudioEngine::renderMetronome (float* dst, const BlockTime& t, bool active) {
+    juce::FloatVectorOperations::clear (dst, t.numSamples);
+    if (! active) { metroRemaining = 0; return; }
     const TransportSettings* ts = transportPtr.load (std::memory_order_acquire);
     const float vol = ts != nullptr ? ts->metronomeVolume : 0.5f;
     const double sr = t.sampleRate;
@@ -622,7 +659,7 @@ void AudioEngine::renderMetronome (float* const* out, int numOut, int ch, const 
             const float s = (float) std::sin (metroPhase) * env * env * vol * 0.5f;
             metroPhase += 2.0 * juce::MathConstants<double>::pi * metroFreq / sr;
             --metroRemaining;
-            for (int c = 0; c < 2; ++c) if (ch + c < numOut && out[ch + c] != nullptr) out[ch + c][i] += s;
+            dst[i] = s;
         }
     }
 }

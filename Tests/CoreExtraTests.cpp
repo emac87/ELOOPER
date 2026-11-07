@@ -246,6 +246,27 @@ EL_TEST (midi_sequence_sorted_and_note_off_clipped_before_loop_end) {
     EL_CHECK (found);
 }
 
+EL_TEST (midi_sequence_expands_ratchets) {
+    MidiClip clip;
+    clip.lengthBeats = 4.0;
+    auto n = mkNote (1.0, 0.25, 38);
+    n.ratchet = 4;
+    clip.notes.push_back (n);
+    MidiSequence seq = MidiSequence::fromClip (clip);
+    EL_CHECK (seq.events.size() == 8);               // 4 hits -> 4 on + 4 off
+    std::vector<double> ons;
+    for (const auto& e : seq.events) if (e.isNoteOn()) ons.push_back (e.beat);
+    EL_CHECK (ons.size() == 4);
+    if (ons.size() == 4) {
+        EL_CHECK_NEAR (ons[0], 1.0, 1e-9);
+        EL_CHECK_NEAR (ons[1], 1.0625, 1e-9);
+        EL_CHECK_NEAR (ons[3], 1.1875, 1e-9);
+    }
+    // each hit ends before the next one starts
+    for (size_t i = 1; i < seq.events.size(); ++i)
+        if (seq.events[i].isNoteOn()) EL_CHECK (seq.events[i - 1].isNoteOff());
+}
+
 EL_TEST (midi_sequence_excludes_muted_and_orders_offs_before_ons) {
     MidiClip clip;
     clip.lengthBeats = 16.0;
@@ -517,4 +538,54 @@ EL_TEST (chunk_pool_reserve_pop_push_counts) {
     pool.reserve (6);                                 // tops up to 6 free
     EL_CHECK (pool.available() == 6);
     EL_CHECK (pool.totalAllocated() == 9);
+}
+
+// ---------------------------------------------------------------------------------------
+// Plug-in delay compensation
+#include "Core/Pdc.h"
+
+EL_TEST (delay_line_delays_by_exact_samples) {
+    el::DelayLine d;
+    d.prepare (3);
+    float x[8] = { 1, 2, 3, 4, 5, 6, 7, 8 };
+    d.process (x, 5);
+    d.process (x + 5, 3);
+    const float want[8] = { 0, 0, 0, 1, 2, 3, 4, 5 };
+    for (int i = 0; i < 8; ++i) EL_CHECK_NEAR (x[i], want[i], 1e-9);
+    el::DelayLine z; z.prepare (0);
+    float y[2] = { 9, 8 }; z.process (y, 2);
+    EL_CHECK (y[0] == 9.0f && y[1] == 8.0f);
+}
+
+EL_TEST (pdc_aligns_tracks_into_master) {
+    using el::pdc::Node;
+    // 0: audio track, no plugins -> master   1: instrument (100) + pre (50) -> bus 2
+    // 2: bus with post fx (30) -> master       3: master
+    std::vector<Node> n (4);
+    n[0].outIndex = 3;
+    n[1].instLatency = 100; n[1].preLatency = 50; n[1].outIndex = 2;
+    n[1].sends.push_back ({ 3, true });          // pre-fader send straight to master
+    n[2].postLatency = 30; n[2].outIndex = 3;
+    auto r = el::pdc::compute (n, 3);
+    EL_CHECK (r.start[2] == 150);
+    EL_CHECK (r.start[3] == 180);                 // bus path is the latest: 150 + 30
+    EL_CHECK (r.outDelay[0] == 180);              // dry track waits for the bus
+    EL_CHECK (r.outDelay[1] == 0);                // only feeder of the bus
+    EL_CHECK (r.sendDelay[1][0] == 30);           // pre send leaves at 150, master starts at 180
+    EL_CHECK (r.outDelay[2] == 0);
+    EL_CHECK (r.total == 180);
+}
+
+EL_TEST (pdc_aux_outputs_tap_after_instrument) {
+    using el::pdc::Node;
+    // 0: instrument 64, post fx 36 -> master; aux child 1 -> master. 2: master
+    std::vector<Node> n (3);
+    n[0].instLatency = 64; n[0].postLatency = 36; n[0].outIndex = 2; n[0].auxChildren = { 1 };
+    n[1].outIndex = 2;
+    auto r = el::pdc::compute (n, 2);
+    EL_CHECK (r.start[1] == 64);
+    EL_CHECK (r.auxDelay[0][0] == 0);
+    EL_CHECK (r.outDelay[1] == 36);
+    EL_CHECK (r.outDelay[0] == 0);
+    EL_CHECK (r.total == 100);
 }

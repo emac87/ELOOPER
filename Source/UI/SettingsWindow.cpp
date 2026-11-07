@@ -102,7 +102,9 @@ private:
                                   + msString (t.latencyOut, t.sampleRate) + "  |  round trip "
                                   + msString (t.latencyIn + t.latencyOut, t.sampleRate)
                                   + "  (" + juce::String (t.latencyIn + t.latencyOut) + " samples, buffer "
-                                  + juce::String (t.blockSize) + ")",
+                                  + juce::String (t.blockSize) + ")"
+                                  + (t.pluginLatency > 0 ? "  |  plug-in delay compensation " + msString (t.pluginLatency, t.sampleRate)
+                                                         : juce::String()),
                               juce::dontSendNotification);
     }
 

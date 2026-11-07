@@ -42,6 +42,35 @@ jobs:
           path: ELooper-macos.zip
           if-no-files-found: error
 
+  release:
+    # Publishes the newest Mac build at a permanent link:
+    # https://github.com/emac87/ELOOPER/releases/download/latest/ELooper-macos.zip
+    name: Publish "latest" release
+    needs: macos
+    if: github.event_name == 'push' && github.ref == 'refs/heads/elooper-initial'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ELooper-macos
+
+      - name: Move the latest tag and upload the app
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag -f latest "$GITHUB_SHA"
+          git push -f origin refs/tags/latest
+          if ! gh release view latest >/dev/null 2>&1; then
+            gh release create latest --prerelease --title "Latest build" \
+              --notes "Newest successful Mac build of ELooper. Unzip, move ELooper.app to Applications, then System Settings > Privacy & Security > Open Anyway on first launch."
+          fi
+          gh release upload latest ELooper-macos.zip --clobber
+          gh release edit latest --target "$GITHUB_SHA" --notes "Newest successful Mac build of ELooper (commit ${GITHUB_SHA::7}). Unzip, move ELooper.app to Applications, then System Settings > Privacy & Security > Open Anyway on first launch."
+
   linux:
     name: Linux (Release)
     runs-on: ubuntu-24.04

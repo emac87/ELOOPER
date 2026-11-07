@@ -63,6 +63,7 @@ struct TakeAudio {
     int numChunks = 0;
     int64_t lengthFrames = 0;
     double lengthBeats = 0;
+    double sampleRate = 0;      // rate the audio was recorded / loaded at (0 = same as now)
     bool hasContent = false;
 
     float sample (int ch, int64_t f) const noexcept {
@@ -161,7 +162,7 @@ public:
     // Message thread only, while the loop is NOT reachable by the audio thread
     // (before first publish / after load): install audio for a take.
     bool loadTake (int takeIndex, const float* const* channels, int numChannels, int64_t frames,
-                   double beats, ChunkPool& pool);
+                   double beats, ChunkPool& pool, double sampleRate = 0);
     void setActiveTakeOffline (int t) noexcept { activeTake = t; uiActiveTake = t; }
     void setSettingsOffline (const LoopSettings& s) noexcept { settings = s; }
     void setStoppedOffline() noexcept { if (numTakes > 0) state = LoopState::Stopped; publish (0); }
@@ -177,6 +178,7 @@ private:
     void writeTail (int from, int to, LoopIo& io) noexcept;
     void playAudio (int from, int to, const BlockTime& t, LoopIo& io, bool overdub, const LoopContext& ctx) noexcept;
     void playMidi (int from, int to, const BlockTime& t, LoopIo& io) noexcept;
+    double bestGrainStart (const TakeAudio& tk, double synced, double target, double pitchRate, int searchRadius) const noexcept;
     void recordMidi (int from, int to, const BlockTime& t, LoopIo& io, const LoopContext& ctx, double originBeat) noexcept;
     void allNotesOff (BlockMidi* out, int sample) noexcept;
     void deleteTake (int index, const LoopContext& ctx) noexcept;
@@ -204,6 +206,13 @@ private:
     TakeAudio takes[kMaxTakes];
     int numTakes = 0;
     int activeTake = 0;
+
+    // Time-stretch (keep pitch on tempo changes): two overlapping Hann-windowed grains, each
+    // started at the beat-synced position and read at the original pitch.
+    struct Grain { double src = 0; int age = 0; bool on = false; };
+    Grain grains[2];
+    int grainClock = 0, nextGrain = 0;
+    bool stretching = false;
 
     float env = 0;                  // click-free start/stop envelope
     float lastGain = 0;

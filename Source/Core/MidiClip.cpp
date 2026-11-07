@@ -37,12 +37,12 @@ static void buildNotes (const std::vector<MidiEvent>& events, double lengthBeats
         const int ch = e.data[0] & 0x0F;
         if (e.isNoteOn()) {
             auto& h = held[ch][e.data[1] & 0x7F];
-            if (h.on) notes.push_back ({ wrap (h.start), std::max (1.0e-3, e.beat - h.start), e.data[1], h.vel, (uint8_t) (ch + 1), false });
+            if (h.on) notes.push_back ({ wrap (h.start), std::max (1.0e-3, e.beat - h.start), e.data[1], h.vel, (uint8_t) (ch + 1), false, 1 });
             h = { true, e.beat, e.data[2] };
         } else if (e.isNoteOff()) {
             auto& h = held[ch][e.data[1] & 0x7F];
             if (! h.on) continue;
-            notes.push_back ({ wrap (h.start), std::max (1.0e-3, e.beat - h.start), e.data[1], h.vel, (uint8_t) (ch + 1), false });
+            notes.push_back ({ wrap (h.start), std::max (1.0e-3, e.beat - h.start), e.data[1], h.vel, (uint8_t) (ch + 1), false, 1 });
             h.on = false;
         } else {
             MidiEvent c = e; c.beat = wrap (e.beat); ctrls.push_back (c);
@@ -54,7 +54,7 @@ static void buildNotes (const std::vector<MidiEvent>& events, double lengthBeats
     for (int ch = 0; ch < 16; ++ch)
         for (int p = 0; p < 128; ++p)
             if (held[ch][p].on)
-                notes.push_back ({ wrap (held[ch][p].start), std::max (1.0e-3, last - held[ch][p].start), (uint8_t) p, held[ch][p].vel, (uint8_t) (ch + 1), false });
+                notes.push_back ({ wrap (held[ch][p].start), std::max (1.0e-3, last - held[ch][p].start), (uint8_t) p, held[ch][p].vel, (uint8_t) (ch + 1), false, 1 });
     for (auto& n : notes)
         if (lengthBeats > 0) n.length = std::min (n.length, lengthBeats);
 }
@@ -77,10 +77,18 @@ MidiSequence MidiSequence::fromClip (const MidiClip& clip) {
     for (const auto& n : clip.notes) {
         if (n.muted || n.start >= L || n.length <= 0) continue;
         const uint8_t ch = (uint8_t) ((n.channel - 1) & 0x0F);
-        MidiEvent on;  on.beat = n.start;  on.data[0] = (uint8_t) (0x90 | ch); on.data[1] = n.pitch; on.data[2] = std::max<uint8_t> (1, n.velocity);
-        // Notes that run past the loop end are cut just before it, so they never hang across the wrap.
-        MidiEvent off; off.beat = std::min (n.start + n.length, L - 1.0e-6); off.data[0] = (uint8_t) (0x80 | ch); off.data[1] = n.pitch; off.data[2] = 0;
-        s.events.push_back (on); s.events.push_back (off);
+        // A ratchet splits the note into equal re-triggers; each hit sounds for 75% of its slot.
+        const int hits = std::clamp<int> (n.ratchet, 1, 8);
+        const double slot = n.length / hits;
+        for (int h = 0; h < hits; ++h) {
+            const double start = n.start + slot * h;
+            if (start >= L) break;
+            const double len = hits > 1 ? slot * 0.75 : n.length;
+            MidiEvent on;  on.beat = start;  on.data[0] = (uint8_t) (0x90 | ch); on.data[1] = n.pitch; on.data[2] = std::max<uint8_t> (1, n.velocity);
+            // Notes that run past the loop end are cut just before it, so they never hang across the wrap.
+            MidiEvent off; off.beat = std::min (start + std::max (1.0e-4, len), L - 1.0e-6); off.data[0] = (uint8_t) (0x80 | ch); off.data[1] = n.pitch; off.data[2] = 0;
+            s.events.push_back (on); s.events.push_back (off);
+        }
     }
     for (const auto& c : clip.controllers) if (c.beat < L) s.events.push_back (c);
     std::stable_sort (s.events.begin(), s.events.end(), [] (const MidiEvent& a, const MidiEvent& b) {

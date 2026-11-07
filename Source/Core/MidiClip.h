@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace el {
@@ -11,6 +12,13 @@ struct MidiNote {
     uint8_t velocity = 100;
     uint8_t channel = 1;   // 1..16
     bool    muted = false;
+    uint8_t ratchet = 1;   // 1..8: number of equal re-triggers spread over the note's length
+};
+
+// One step-sequencer lane: the note it plays and the name shown for it.
+struct StepLane {
+    uint8_t     pitch = 36;
+    std::string name;      // empty = default name for the pitch
 };
 
 // Raw short MIDI message at a beat position.
@@ -29,6 +37,8 @@ struct MidiClip {
     std::vector<MidiEvent> controllers;
     // Step-sequencer view settings (the steps are just notes).
     double stepBeats = 0.25;         // 1/16 notes
+    std::vector<StepLane> stepLanes; // lane order + names, top to bottom (empty = automatic)
+    std::string stepMapName;         // name of the lane preset in use (display only)
 
     void sortNotes();
     // Quantise note starts (and optionally ends) to `grid` beats with `strength` 0..1.

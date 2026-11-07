@@ -186,3 +186,67 @@ EL_TEST (midi_loop_records_events_and_plays_sequence) {
     EL_CHECK (ons == 1); EL_CHECK (offs == 1);
     EL_CHECK (std::abs (firstOn - 24000) <= 1);
 }
+
+// Records one bar of a 440 Hz sine at 120 bpm, then plays it at 150 bpm and measures the pitch
+// from zero crossings: time-stretch keeps 440 Hz, varispeed raises it by 150/120.
+static double g_testTempo = 150;
+static double playedFrequencyAfterTempoChange (bool varispeed, double* minRms = nullptr) {
+    ChunkPool pool; pool.reserve (64);
+    EventQueue events { 4096 };
+    LoopContext ctx; ctx.pool = &pool; ctx.events = &events;
+    BlockTime t; t.sampleRate = 48000; t.tempo = 120; t.beatsPerBar = 4; t.masterBeats = 4; t.playing = true;
+    t.beatsPerSample = t.tempo / 60.0 / t.sampleRate;
+    LoopRt loop (10, 2, LoopType::Audio);
+    LoopSettings s; s.startQuantize = Quantize::None; s.lengthMode = RecordLength::Master; s.varispeed = varispeed;
+    loop.command ({ LoopCommandType::SetSettings, 0, 0, 0, s }, t, ctx);
+    loop.command ({ LoopCommandType::Record }, t, ctx);
+    double beat = 0; int64_t si = 0;
+    const int n = 256;
+    std::vector<float> in (n), oL (n), oR (n), played;
+    auto run = [&] (int64_t samples, bool record) {
+        for (int64_t done = 0; done < samples; done += n) {
+            for (int i = 0; i < n; ++i) in[(size_t) i] = record ? (float) std::sin (2.0 * 3.14159265358979 * 440.0 * (double) (si + i) / 48000.0) : 0.0f;
+            std::fill (oL.begin(), oL.end(), 0.0f); std::fill (oR.begin(), oR.end(), 0.0f);
+            t.numSamples = n; t.beatStart = beat;
+            LoopIo io; io.in[0] = in.data(); io.in[1] = in.data(); io.out[0] = oL.data(); io.out[1] = oR.data();
+            loop.process (t, io, ctx);
+            if (! record) played.insert (played.end(), oL.begin(), oL.end());
+            beat += n * t.beatsPerSample; si += n;
+        }
+    };
+    run (96000, true);                       // one bar recorded
+    t.tempo = g_testTempo; t.beatsPerSample = t.tempo / 60.0 / t.sampleRate;
+    run (48000, false);                      // one second at the new tempo
+    int crossings = 0;
+    for (size_t i = 4800 + 1; i < played.size(); ++i)   // skip the first 100 ms
+        if ((played[i - 1] < 0) != (played[i] < 0)) ++crossings;
+    const double seconds = (double) (played.size() - 4801) / 48000.0;
+    if (minRms != nullptr) {
+        *minRms = 1.0;
+        for (size_t w = 4800; w + 480 <= played.size(); w += 240) {
+            double e = 0; for (size_t i = w; i < w + 480; ++i) e += played[i] * played[i];
+            *minRms = std::min (*minRms, std::sqrt (e / 480.0));
+        }
+    }
+    return crossings / 2.0 / seconds;
+}
+
+EL_TEST (tempo_change_keeps_pitch_with_time_stretch) {
+    double minRms = 0;
+    const double stretched = playedFrequencyAfterTempoChange (false, &minRms);
+    std::printf ("  stretched: %.1f Hz, min 10 ms RMS %.3f (steady sine = 0.707)\n", stretched, minRms);
+    EL_CHECK (minRms > 0.35);
+    const double tape = playedFrequencyAfterTempoChange (true);
+    EL_CHECK_NEAR (stretched, 440.0, 6.0);
+    EL_CHECK_NEAR (tape, 550.0, 6.0);
+    g_testTempo = 127.6;   // grains half a cycle apart: worst case for a pure tone
+    const double worst = playedFrequencyAfterTempoChange (false, &minRms);
+    std::printf ("  stretched @127.6: %.1f Hz, min 10 ms RMS %.3f\n", worst, minRms);
+    EL_CHECK_NEAR (worst, 440.0, 6.0);
+    EL_CHECK (minRms > 0.6);
+    g_testTempo = 96;      // slower than recorded
+    const double slow = playedFrequencyAfterTempoChange (false, &minRms);
+    EL_CHECK_NEAR (slow, 440.0, 6.0);
+    EL_CHECK (minRms > 0.6);
+    g_testTempo = 150;
+}

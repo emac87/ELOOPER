@@ -5,6 +5,7 @@
 #include <JuceHeader.h>
 #include "Model/Session.h"
 #include "Core/GraphicEq.h"
+#include "Core/Pdc.h"
 #include "Engine/LinkClock.h"
 
 namespace el {
@@ -47,6 +48,12 @@ struct TrackNode {
     bool midiGateOpen = true;
     float smoothVol = 0, smoothPanL = 1, smoothPanR = 1, smoothInGain = 1;
     float smoothSend[kMaxSends] {};
+    // Plug-in delay compensation: padding applied where this node's signal sums into another.
+    int latency = 0;                       // own plug-in latency (instrument + inserts), samples
+    StereoDelay outDelay;                  // main output -> outputIndex
+    StereoDelay sendDelay[kMaxSends];      // parallel to `sends`
+    std::vector<StereoDelay> auxDelay;     // parallel to `auxChildren`
+    juce::AudioBuffer<float> tap;          // scratch for delayed copies (2 ch)
 };
 
 struct TimelineEntry { int nodeIndex; LoopRt* loop; double start, length; };
@@ -60,6 +67,9 @@ struct RenderGraph {
     bool anySolo = false;
     int maxBlock = 0;
     double sampleRate = 48000;
+    int totalLatency = 0;                  // plug-in latency of the whole mix (after PDC), samples
+    juce::AudioBuffer<float> metro;        // metronome scratch (1 ch), delayed to match the mix
+    DelayLine metroDelay;
     LoopRt* findLoop (Id id) const noexcept;
 };
 
@@ -112,6 +122,7 @@ public:
     std::atomic<double> statusTempo { 120 };
     std::atomic<double> cpuLoad { 0 };
     std::atomic<int>    xruns { 0 };
+    std::atomic<int>    pluginLatency { 0 };   // samples of PDC currently applied to the mix
 
     // ---- offline / tests ---------------------------------------------------------------
     void prepareOffline (double sampleRate, int blockSize);
@@ -132,7 +143,7 @@ private:
     void runPlugins (std::vector<PluginNode>& chain, juce::AudioBuffer<float>& buf, juce::MidiBuffer& midi, int numSamples);
     void applyAutomation (RenderGraph& g, TrackNode& n, const BlockTime& t);
     void applyTimeline (RenderGraph& g, const BlockTime& t);
-    void renderMetronome (float* const* out, int numOut, int ch, const BlockTime& t);
+    void renderMetronome (float* dst, const BlockTime& t, bool active);   // mono, overwrites dst
     void collectMidi (int numSamples);
 
     RtEpoch epoch;

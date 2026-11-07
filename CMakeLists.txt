@@ -19,6 +19,7 @@ add_library(elooper_core STATIC
     Source/Core/GraphicEq.cpp
     Source/Core/LoopCore.cpp
     Source/Core/MidiClip.cpp
+    Source/Core/Pdc.cpp
     Source/Core/Routing.cpp
 )
 target_include_directories(elooper_core PUBLIC Source)

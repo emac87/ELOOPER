@@ -182,6 +182,7 @@ void LoopRt::startRecording (double beat, double targetBeats, const BlockTime& t
     anchorBeat = beat;
     recFrames = 0;
     recordLatency = ctx.recordLatency;
+    takes[take].sampleRate = t.sampleRate;
     if (targetBeats > 0) recordTargetBeats = targetBeats;
     else if (settings.lengthMode == RecordLength::Master) recordTargetBeats = t.masterBeats;
     else if (settings.lengthMode == RecordLength::Bars) recordTargetBeats = std::max<int> (1, settings.recordBars) * t.beatsPerBar;
@@ -380,12 +381,56 @@ void LoopRt::playAudio (int from, int to, const BlockTime& t, LoopIo& io, bool o
     float peak = 0;
     const bool exact = std::abs (ratio - 1.0) < 1.0e-9 && std::abs (p - std::round (p)) < 1.0e-6;
     if (exact) p = std::round (p);
+
+    // Source frames per output sample at the original pitch (differs from 1 only when the take
+    // was recorded at another device sample rate). Reading at `ratio` instead is tape-style.
+    const double pitchRate = tk.sampleRate > 0 && t.sampleRate > 0 ? tk.sampleRate / t.sampleRate : 1.0;
+    const bool stretch = ! exact && ! settings.varispeed && std::abs (ratio - pitchRate) > 1.0e-6;
+    const int grainLen = std::clamp (2 * (int) std::lround (0.018 * t.sampleRate), 256, 8192);   // ~36 ms
+    const int hop = grainLen / 2;
+    auto readAt = [&] (double pos, float& l, float& r) noexcept {
+        pos = std::fmod (pos, len); if (pos < 0) pos += len;
+        int64_t a = (int64_t) pos; if (a >= L) a -= L;
+        int64_t b = a + 1; if (b >= L) b = 0;
+        const float fr = (float) (pos - std::floor (pos));
+        l = tk.sample (0, a) + (tk.sample (0, b) - tk.sample (0, a)) * fr;
+        r = tk.sample (1, a) + (tk.sample (1, b) - tk.sample (1, a)) * fr;
+    };
+    if (stretch && ! stretching) {
+        // Enter with a half-finished grain so the overlapping windows sum to 1 from the first sample.
+        grains[0] = { p - hop * pitchRate, hop, true };
+        grains[1] = {};
+        nextGrain = 1; grainClock = 0;
+    }
+    stretching = stretch;
+    const double twoPiOverG = 2.0 * 3.14159265358979323846 / grainLen;
+
     for (int i = 0; i < n; ++i) {
         int64_t i0 = (int64_t) p;
         if (i0 >= L) i0 -= L;
-        float sl, sr;
+        float sl = 0, sr = 0;
         if (exact) { sl = tk.sample (0, i0); sr = tk.sample (1, i0); }
-        else {
+        else if (stretch) {
+            if (grainClock == 0) {
+                // WSOLA: start the new grain near the beat-synced position, at the offset that best
+                // continues the grain that is fading out (avoids phasing / pitch wobble). The
+                // offset is bounded, so the loop never drifts from the beat.
+                double start = p;
+                const auto& old = grains[nextGrain ^ 1];
+                if (old.on) start = bestGrainStart (tk, p, old.src + old.age * pitchRate, pitchRate, hop / 2);
+                grains[nextGrain] = { start, 0, true };
+                nextGrain ^= 1;
+            }
+            if (++grainClock >= hop) grainClock = 0;
+            for (auto& gr : grains) {
+                if (! gr.on) continue;
+                const float w = (float) (0.5 - 0.5 * std::cos (twoPiOverG * gr.age));
+                float a, b;
+                readAt (gr.src + gr.age * pitchRate, a, b);
+                sl += a * w; sr += b * w;
+                if (++gr.age >= grainLen) gr.on = false;
+            }
+        } else {
             const float fr = (float) (p - (double) (int64_t) p);
             int64_t i1 = i0 + 1; if (i1 >= L) i1 = 0;
             sl = tk.sample (0, i0) + (tk.sample (0, i1) - tk.sample (0, i0)) * fr;
@@ -412,6 +457,42 @@ void LoopRt::playAudio (int from, int to, const BlockTime& t, LoopIo& io, bool o
     if (state == LoopState::Stopped && env <= 0) lastGain = 0;
     uiPeak.store (std::max (peak, uiPeak.load (std::memory_order_relaxed) * 0.9f), std::memory_order_relaxed);
     (void) ctx;
+}
+
+double LoopRt::bestGrainStart (const TakeAudio& tk, double synced, double target, double pitchRate, int radius) const noexcept {
+    const int64_t L = tk.lengthFrames;
+    if (L <= 0 || radius <= 0) return synced;
+    auto mono = [&] (double pos) noexcept {
+        int64_t i = (int64_t) std::floor (pos);
+        i %= L; if (i < 0) i += L;
+        return tk.sample (0, i) + tk.sample (1, i);
+    };
+    // Reference: what the fading grain would play next.
+    constexpr int kPoints = 96;
+    float ref[kPoints];
+    double refEnergy = 0;
+    for (int k = 0; k < kPoints; ++k) { ref[k] = mono (target + k * 4 * pitchRate); refEnergy += (double) ref[k] * ref[k]; }
+    if (refEnergy < 1.0e-9) return synced;   // silence: nothing to match
+    auto score = [&] (double cand, int step) noexcept {
+        double c = 0, e = 0;
+        for (int k = 0; k < kPoints; k += step) {
+            const float x = mono (cand + k * 4 * pitchRate);
+            c += (double) x * ref[k]; e += (double) x * x;
+        }
+        return e > 1.0e-12 ? c / std::sqrt (e) : -1.0e30;
+    };
+    int best = 0; double bestScore = -1.0e30;
+    for (int d = -radius; d <= radius; d += 3) {          // coarse
+        const double s = score (synced + d, 2);
+        if (s > bestScore) { bestScore = s; best = d; }
+    }
+    const int c0 = best;
+    bestScore = -1.0e30;
+    for (int d = std::max (-radius, c0 - 2); d <= std::min (radius, c0 + 2); ++d) {   // refine
+        const double s = score (synced + d, 1);
+        if (s > bestScore) { bestScore = s; best = d; }
+    }
+    return synced + best;
 }
 
 void LoopRt::playMidi (int from, int to, const BlockTime& t, LoopIo& io) noexcept {
@@ -501,7 +582,7 @@ void LoopRt::releaseAll (ChunkPool& pool) noexcept {
     numTakes = 0;
 }
 
-bool LoopRt::loadTake (int takeIndex, const float* const* ch, int numCh, int64_t frames, double beats, ChunkPool& pool) {
+bool LoopRt::loadTake (int takeIndex, const float* const* ch, int numCh, int64_t frames, double beats, ChunkPool& pool, double sampleRate) {
     if (takeIndex < 0 || takeIndex >= kMaxTakes || frames <= 0) return false;
     auto& tk = takes[takeIndex];
     tk.release (pool);
@@ -512,7 +593,7 @@ bool LoopRt::loadTake (int takeIndex, const float* const* ch, int numCh, int64_t
         *tk.writePtr (0, f) = ch[0][f];
         *tk.writePtr (1, f) = numCh > 1 ? ch[1][f] : ch[0][f];
     }
-    tk.lengthFrames = frames; tk.lengthBeats = beats; tk.hasContent = true;
+    tk.lengthFrames = frames; tk.lengthBeats = beats; tk.hasContent = true; tk.sampleRate = sampleRate;
     numTakes = std::max (numTakes, takeIndex + 1);
     if (state == LoopState::Empty) state = LoopState::Stopped;
     publish (0);

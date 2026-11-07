@@ -38,6 +38,7 @@ struct EngineController::Impl : public juce::Timer, public juce::ChangeListener 
     juce::StringArray midiDeviceIds;
     int deviceTick = 0;
     bool graphDirty = false;
+    int64_t latencySignature = 0;
 
     void timerCallback() override { owner.tick(); }
     void changeListenerCallback (juce::ChangeBroadcaster*) override { owner.deviceChanged(); }
@@ -197,6 +198,44 @@ void EngineController::rebuildGraph() {
         if (g->nodes[i].auxParentIndex >= 0) g->nodes[(size_t) g->nodes[i].auxParentIndex].auxChildren.push_back ((int) i);
     std::sort (g->loopIndex.begin(), g->loopIndex.end());
 
+    // ---- plug-in delay compensation ----
+    {
+        std::vector<pdc::Node> pn (g->nodes.size());
+        for (size_t i = 0; i < g->nodes.size(); ++i) {
+            const auto& n = g->nodes[i];
+            pn[i].instLatency = n.hasInstrument ? pluginLatency (n.instrument) : 0;
+            for (auto& p : n.pre) pn[i].preLatency += pluginLatency (p);
+            for (auto& p : n.post) pn[i].postLatency += pluginLatency (p);
+            pn[i].outIndex = n.outputIndex;
+            for (auto& sn : n.sends) pn[i].sends.push_back ({ sn.destIndex, sn.preFader });
+            pn[i].auxChildren = n.auxChildren;
+        }
+        const auto r = pdc::compute (pn, g->masterIndex);
+        g->totalLatency = r.total;
+        g->metro.setSize (1, block); g->metro.clear();
+        g->metroDelay.prepare (r.total);
+        for (size_t i = 0; i < g->nodes.size(); ++i) {
+            auto& n = g->nodes[i];
+            n.latency = pn[i].instLatency + pn[i].preLatency + pn[i].postLatency;
+            n.tap.setSize (2, block); n.tap.clear();
+            n.outDelay.prepare (r.outDelay[i]);
+            for (size_t k = 0; k < n.sends.size() && k < (size_t) kMaxSends; ++k) n.sendDelay[k].prepare (r.sendDelay[i][k]);
+            n.auxDelay.resize (n.auxChildren.size());
+            for (size_t k = 0; k < n.auxChildren.size(); ++k) n.auxDelay[k].prepare (r.auxDelay[i][k]);
+            if (old != nullptr)   // keep delayed audio flowing when the delays did not change
+                for (auto& on : old->nodes)
+                    if (on.id == n.id) {
+                        n.outDelay.copyStateFrom (on.outDelay);
+                        for (size_t k = 0; k < n.sends.size() && k < on.sends.size() && k < (size_t) kMaxSends; ++k)
+                            if (on.sends[k].destIndex >= 0 && n.sends[k].sendIndex == on.sends[k].sendIndex)
+                                n.sendDelay[k].copyStateFrom (on.sendDelay[k]);
+                        break;
+                    }
+        }
+        if (old != nullptr) g->metroDelay.copyStateFrom (old->metroDelay);
+        impl->latencySignature = latencySignature();
+    }
+
     for (auto& c : s.timeline) {
         auto l = s.findLoop (c.loopId);
         if (! l || ! l->rt || ! indexOf.count (c.trackId)) continue;
@@ -208,6 +247,23 @@ void EngineController::rebuildGraph() {
 
     audioEngine->publishGraph (std::move (g));
     impl->graphDirty = false;
+}
+
+int EngineController::pluginLatency (const PluginNode& p) {
+    if (p.proc == nullptr || p.slot == nullptr || p.slot->bypassed.load()) return 0;
+    return std::max (0, p.proc->getLatencySamples());
+}
+
+// Changes whenever any plug-in's latency or bypass state changes.
+int64_t EngineController::latencySignature() const {
+    int64_t sig = 1469598103934665603LL;
+    for (auto& t : sessionPtr->tracks)
+        for (auto& p : t->allPlugins()) {
+            if (! p || ! p->instance) continue;
+            const int64_t v = (int64_t) p->id * 31 + (p->bypassed.load() ? 0 : std::max (0, p->instance->getLatencySamples()) + 1);
+            sig = (sig ^ v) * 1099511628211LL;
+        }
+    return sig;
 }
 
 void EngineController::publishTransport() {
@@ -304,7 +360,7 @@ void EngineController::loadSession (std::unique_ptr<Session> s, std::function<vo
             for (size_t k = 0; k < l->pendingAudio.size() && k < (size_t) kMaxTakes; ++k) {
                 auto& pa = l->pendingAudio[k];
                 if (pa.audio.getNumSamples() > 0)
-                    l->rt->loadTake ((int) k, pa.audio.getArrayOfReadPointers(), pa.audio.getNumChannels(), pa.audio.getNumSamples(), pa.beats, audioEngine->chunkPool());
+                    l->rt->loadTake ((int) k, pa.audio.getArrayOfReadPointers(), pa.audio.getNumChannels(), pa.audio.getNumSamples(), pa.beats, audioEngine->chunkPool(), audioEngine->sampleRate());
             }
             l->pendingAudio.clear();
             for (size_t k = 0; k < l->midiTakes.size() && k < (size_t) kMaxTakes; ++k) {
@@ -720,7 +776,7 @@ void EngineController::showPluginEditor (Id slotId) {
 }
 
 void EngineController::togglePluginEditor (Id slotId) {
-    if (plugins.isEditorOpen (slotId)) plugins.closeEditor (slotId);
+    if (plugins.isEditorOpen (slotId)) plugins.hideEditor (slotId);
     else showPluginEditor (slotId);
 }
 
@@ -1199,6 +1255,7 @@ TransportStatus EngineController::transportStatus() const {
     s.blockSize = audioEngine->blockSize();
     s.latencyIn = audioEngine->inputLatency();
     s.latencyOut = audioEngine->outputLatency();
+    s.pluginLatency = audioEngine->pluginLatency.load();
     return s;
 }
 
@@ -1316,6 +1373,8 @@ void EngineController::tick() {
                         if ((int) l->midiTakes.size() <= e.take) l->midiTakes.resize ((size_t) e.take + 1);
                         auto clip = MidiClip::fromEvents (ev, e.beat);
                         clip.stepBeats = l->midiTakes[(size_t) e.take].stepBeats;
+                        clip.stepLanes = l->midiTakes[(size_t) e.take].stepLanes;     // keep the lane layout
+                        clip.stepMapName = l->midiTakes[(size_t) e.take].stepMapName;
                         l->midiTakes[(size_t) e.take] = clip;
                         ev.clear();
                         publishMidiTake (*l, e.take);
@@ -1369,6 +1428,8 @@ void EngineController::tick() {
 
     recordAutomation();
     recordArrangement();
+    // Plug-ins can change their latency at any time (look-ahead, oversampling...): re-align.
+    if (! impl->graphDirty && latencySignature() != impl->latencySignature) impl->graphDirty = true;
     if (impl->graphDirty) rebuildGraph();
     audioEngine->collectGarbage();
 

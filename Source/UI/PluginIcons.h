@@ -1,10 +1,8 @@
 #pragma once
-// Plugin / channel icons for track headers: real AU icons when macOS provides one, otherwise
-// built-in single-colour vector icons chosen by guessing from the plugin's category and name.
-// User overrides are remembered per plugin (or per track kind when the track has no plugin).
+// Plugin / channel icons for track headers: generic single-colour vector icons chosen from the
+// plugin's type (instrument, MIDI effect, audio effect) and a guess from its category and name.
 #include <JuceHeader.h>
 #include "Model/Session.h"
-#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -15,7 +13,7 @@ enum class Kind {
     // instruments
     Synth, Piano, Drums, Sampler, Bass, Strings, Organ,
     // effects
-    Reverb, Delay, Eq, Compressor, Distortion, Modulation, Effect,
+    Reverb, Delay, Eq, Compressor, Distortion, Modulation, Effect, MidiFx,
     // channel defaults
     Audio, Midi, Bus, Master, AuxOut
 };
@@ -29,34 +27,16 @@ std::unique_ptr<juce::Drawable> makeDrawable (Kind);
 
 Kind guessKind (const juce::PluginDescription&);
 Kind channelKind (TrackKind);
+Kind slotKind (const TrackModel&, const PluginSlot&);   // MidiFx for MIDI effects, else guessKind
 
-// Plugin shown for a track: instrument, else first pre insert, else first post insert, else null.
+// Plugin shown for a track: instrument, else first pre insert, else first post insert,
+// else first MIDI effect, else null.
 PluginSlotPtr iconSlot (const TrackModel&);
 
-class IconCache {
-public:
-    static IconCache& get();   // message thread only
+// The icon for a track: its iconSlot's generic type icon, or the channel-type icon.
+Kind trackKind (const TrackModel&);
 
-    juce::Image realIcon (const juce::PluginDescription&);   // cached; invalid if none
+void drawIcon (juce::Graphics&, juce::Rectangle<float>, Kind, juce::Colour tint);
 
-    // Override value: "builtin:<kindName>" or an absolute image path. Absent = automatic.
-    std::optional<juce::String> override (const juce::String& key);
-    void setOverride (const juce::String& key, const juce::String& value);   // empty value = automatic
-
-    static juce::String overrideKey (const TrackModel&);     // plugin identifier, or "track:<kind>"
-    juce::File importImage (const juce::File& source) const; // copies into appDataDir()/Icons
-
-    void drawIcon (juce::Graphics&, juce::Rectangle<float>, const TrackModel&, juce::Colour tint);
-
-private:
-    IconCache() = default;
-    void loadOverrides();
-    void saveOverrides() const;
-    juce::Image fileImage (const juce::String& path);
-
-    bool loaded = false;
-    std::map<juce::String, juce::String> overrides;
-    std::map<juce::String, juce::Image> real, files;
-};
 
 } // namespace el::icons
