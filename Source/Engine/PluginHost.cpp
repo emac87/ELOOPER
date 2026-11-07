@@ -24,9 +24,36 @@ public:
         if (ed != nullptr)
             setContentOwned (ed, true);   // editor deleted with the window (before the instance)
         setResizable (ed != nullptr && ed->isResizable(), false);
-        centreWithSize (getWidth(), getHeight());
+        centreWithSize (juce::jmax (120, getWidth()), juce::jmax (60, getHeight()));
+        keepOnScreen();
         setVisible (true);
         toFront (true);
+    }
+
+    // Plug-in editors are native views (NSView) that JUCE does not scale. If this window used
+    // the app's UI zoom (Desktop global scale), JUCE would size the native view by the zoom,
+    // the view would report the bigger size back, and the window would grow without end (the
+    // "glitching" window). Plug-in windows therefore always run at 100%.
+    float getDesktopScaleFactor() const override { return 1.0f; }
+
+    // Keep the title bar reachable even if a plug-in asks for a huge or off-screen window.
+    void keepOnScreen()
+    {
+        auto* display = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds());
+        if (display == nullptr) display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+        if (display == nullptr) return;
+        const auto area = display->userArea;
+        auto b = getBounds();
+        b.setWidth (juce::jmin (b.getWidth(), area.getWidth()));
+        b.setHeight (juce::jmin (b.getHeight(), area.getHeight()));
+        b = b.constrainedWithin (area);
+        if (b != getBounds()) setBounds (b);
+    }
+
+    void childBoundsChanged (juce::Component* c) override
+    {
+        juce::DocumentWindow::childBoundsChanged (c);
+        if (! inResize) { const juce::ScopedValueSetter<bool> s (inResize, true); keepOnScreen(); }
     }
 
     ~PluginWindow() override
@@ -40,6 +67,7 @@ public:
 private:
     PluginSlotPtr slot;
     std::function<void (Id)> closeRequested;
+    bool inResize = false;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginWindow)
 };
 

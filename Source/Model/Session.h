@@ -114,6 +114,10 @@ struct TrackModel {
     // Multi-out: AuxOut tracks carry the plugin output pair they take from their parent.
     Id auxParent = kInvalidId;
     int auxPair = 0;                 // 1 = channels 2/3 of the parent's instrument, etc.
+    // Sum folder: a Bus that sums a multi-out instrument (its main out + every AuxOut) so one
+    // channel controls the whole kit. folderOf = the instrument track it belongs to.
+    Id folderOf = kInvalidId;
+    bool folderOpen = true;          // Instrument: show its outputs on the loop page (UI state)
 
     std::vector<LoopPtr> loops;
     std::vector<AutomationLane> automation;   // track/timeline lanes (beats from song start)

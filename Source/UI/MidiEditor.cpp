@@ -43,6 +43,12 @@ MidiEditor::MidiEditor (EngineController& c, Selection& s) : controller (c), sel
     lenPlus.onClick = [this] { changeLength (1); };
     addAndMakeVisible (lenMinus);
     addAndMakeVisible (lenPlus);
+    doubleButton.setTooltip ("Double: twice as many bars, with the pattern copied into the new bars");
+    halveButton.setTooltip ("Halve: half as many bars, keeping the first half");
+    doubleButton.onClick = [this] { doubleClip(); };
+    halveButton.onClick = [this] { halveClip(); };
+    addAndMakeVisible (doubleButton);
+    addAndMakeVisible (halveButton);
     lenLabel.setJustificationType (juce::Justification::centred);
     lenLabel.setFont (theme::font (15.0f));
     lenLabel.setColour (juce::Label::textColourId, theme::text);
@@ -111,36 +117,41 @@ void MidiEditor::paint (juce::Graphics& g)
     {
         g.setColour (controller.loopColour (loopId));
         g.setFont (theme::font (17.0f, true));
-        g.drawText (lp->name.isNotEmpty() ? lp->name : "MIDI loop", 10, 0, 134, headerH, juce::Justification::centredLeft, true);
+        g.drawText (lp->name.isNotEmpty() ? lp->name : "MIDI loop", 10, 0, 112, headerH, juce::Justification::centredLeft, true);
     }
     g.setColour (theme::textDim);
     g.setFont (theme::font (13.0f));
-    g.drawText ("Length", lenMinus.getX() - 56, 0, 54, headerH, juce::Justification::centredRight);
+    g.drawText ("Length", lenMinus.getX() - 52, 0, 48, headerH, juce::Justification::centredRight);
 }
 
 void MidiEditor::resized()
 {
     auto r = getLocalBounds();
     auto h = r.removeFromTop (headerH).reduced (4, 4);
-    h.removeFromLeft (150);
-    pianoTab.setBounds (h.removeFromLeft (90));
-    stepTab.setBounds (h.removeFromLeft (90));
-    h.removeFromLeft (10);
-    gridBox.setBounds (h.removeFromLeft (76));
+    // Right end first (zoom + velocity), so the left controls never overlap them.
+    zoomIn.setBounds (h.removeFromRight (30));
+    zoomOut.setBounds (h.removeFromRight (30));
+    h.removeFromRight (6);
+    h.removeFromLeft (120);   // loop name (painted)
+    pianoTab.setBounds (h.removeFromLeft (82));
+    stepTab.setBounds (h.removeFromLeft (78));
+    h.removeFromLeft (8);
+    gridBox.setBounds (h.removeFromLeft (68));
     h.removeFromLeft (4);
-    tripletToggle.setBounds (h.removeFromLeft (80));
-    snapToggle.setBounds (h.removeFromLeft (70));
-    quantizeButton.setBounds (h.removeFromLeft (96));
-    h.removeFromLeft (60);
-    lenMinus.setBounds (h.removeFromLeft (34));
-    lenLabel.setBounds (h.removeFromLeft (70));
-    lenPlus.setBounds (h.removeFromLeft (34));
-    h.removeFromLeft (10);
-    velLabel.setBounds (h.removeFromLeft (38));
-    velSlider.setBounds (h.removeFromLeft (120));
-    h.removeFromLeft (10);
-    zoomOut.setBounds (h.removeFromLeft (34));
-    zoomIn.setBounds (h.removeFromLeft (34));
+    tripletToggle.setBounds (h.removeFromLeft (74));
+    snapToggle.setBounds (h.removeFromLeft (62));
+    quantizeButton.setBounds (h.removeFromLeft (80));
+    h.removeFromLeft (52);    // "Length" (painted)
+    lenMinus.setBounds (h.removeFromLeft (30));
+    lenLabel.setBounds (h.removeFromLeft (62));
+    lenPlus.setBounds (h.removeFromLeft (30));
+    h.removeFromLeft (4);
+    halveButton.setBounds (h.removeFromLeft (36));
+    doubleButton.setBounds (h.removeFromLeft (36));
+    h.removeFromLeft (8);
+    const bool roomForVel = h.getWidth() >= 90;
+    velLabel.setBounds (roomForVel ? h.removeFromLeft (30) : juce::Rectangle<int>());
+    velSlider.setBounds (roomForVel ? h.removeFromLeft (juce::jmin (120, h.getWidth())) : juce::Rectangle<int>());
     piano.setBounds (r);
     steps.setBounds (r);
 }
@@ -149,7 +160,7 @@ void MidiEditor::updateVisibility()
 {
     const bool has = loopId != kInvalidId;
     for (juce::Component* c : std::initializer_list<juce::Component*> { &pianoTab, &stepTab, &gridBox, &tripletToggle, &snapToggle, &quantizeButton,
-                                                                           &lenMinus, &lenPlus, &lenLabel, &velSlider, &velLabel, &zoomOut, &zoomIn })
+                                                                           &lenMinus, &lenPlus, &lenLabel, &doubleButton, &halveButton, &velSlider, &velLabel, &zoomOut, &zoomIn })
         c->setVisible (has);
     piano.setVisible (has && tab == 0);
     steps.setVisible (has && tab == 1);
@@ -376,6 +387,29 @@ void MidiEditor::changeLength (int direction)
     clip.lengthBeats = nl;
     if (direction < 0)   // drop notes that would start beyond the new end
         clip.notes.erase (std::remove_if (clip.notes.begin(), clip.notes.end(), [nl] (const MidiNote& n) { return n.start >= nl; }), clip.notes.end());
+    commitClip();
+    piano.clipReplaced();
+    steps.setClip (&clip, false);
+}
+
+void MidiEditor::doubleClip()
+{
+    if (loopId == kInvalidId || clip.lengthBeats * 2.0 > 1024.0) return;
+    pushUndo();
+    clip.doubleLength();
+    commitClip();
+    piano.clipReplaced();
+    steps.setClip (&clip, false);
+}
+
+void MidiEditor::halveClip()
+{
+    if (loopId == kInvalidId) return;
+    MidiClip before = clip;
+    if (! clip.halveLength (1.0)) return;
+    undoStack.push_back (std::move (before));
+    if (undoStack.size() > 50) undoStack.erase (undoStack.begin());
+    redoStack.clear();
     commitClip();
     piano.clipReplaced();
     steps.setClip (&clip, false);

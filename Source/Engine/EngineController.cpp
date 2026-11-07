@@ -447,6 +447,7 @@ void EngineController::removeTrack (Id trackId) {
         if (o->outputBus == trackId) o->outputBus = kMasterId;
         for (int k = (int) o->sends.size() - 1; k >= 0; --k) if (o->sends[(size_t) k].busId == trackId) removeSendInternal (*o, k);
         if (o->auxParent == trackId) aux.push_back (o->id);
+        if (o->folderOf == trackId) aux.push_back (o->id);   // its sum folder goes with it
         if (o->recordSource == trackId) o->recordSource = kInvalidId;
         if (o->bouncedInto == trackId) o->bouncedInto = kInvalidId;
     }
@@ -802,16 +803,46 @@ void EngineController::createMultiOutTracks (Id trackId) {
     if (! t || ! t->instrument || t->instrument->numOutputChannels <= 2) return;
     const int pairs = t->instrument->numOutputChannels / 2;
     auto insertAt = std::find (s.tracks.begin(), s.tracks.end(), t) + 1;
+    std::vector<TrackPtr> outs;
     for (int k = 1; k < pairs; ++k) {
-        bool exists = false;
-        for (auto& o : s.tracks) if (o->auxParent == trackId && o->auxPair == k) exists = true;
-        if (exists) continue;
+        TrackPtr existing;
+        for (auto& o : s.tracks) if (o->auxParent == trackId && o->auxPair == k) existing = o;
+        if (existing) { outs.push_back (existing); insertAt = std::find (s.tracks.begin(), s.tracks.end(), existing) + 1; continue; }
         auto a = makeTrack (TrackKind::AuxOut, t->name + " " + juce::String (k * 2 + 1) + "/" + juce::String (k * 2 + 2));
         a->auxParent = trackId; a->auxPair = k; a->colour = t->colour;
         insertAt = s.tracks.insert (insertAt, a) + 1;
+        outs.push_back (a);
     }
+
+    // Sum folder: one bus that every output of the instrument feeds, placed after its outputs.
+    TrackPtr folder = folderBusOf (trackId);
+    if (! folder) {
+        folder = makeTrack (TrackKind::Bus, t->name + " Sum");
+        folder->folderOf = trackId;
+        folder->colour = t->colour;
+        folder->outputBus = t->outputBus;   // the kit goes where the instrument used to go
+        if (auto ob = s.findTrack (folder->outputBus); ! ob || ! ob->isBusLike()) folder->outputBus = kMasterId;
+        s.tracks.insert (insertAt, folder);
+    }
+    t->outputBus = folder->id;
+    for (auto& a : outs) a->outputBus = folder->id;
+    t->folderOpen = true;
     rebuildGraph();
     notify (Change::Structure, trackId);
+}
+
+TrackPtr EngineController::folderBusOf (Id instrumentTrackId) const {
+    if (instrumentTrackId == kInvalidId) return {};
+    for (auto& o : sessionPtr->tracks)
+        if (o->kind == TrackKind::Bus && o->folderOf == instrumentTrackId) return o;
+    return {};
+}
+
+void EngineController::setFolderOpen (Id trackId, bool open) {
+    if (auto t = sessionPtr->findTrack (trackId); t && t->folderOpen != open) {
+        t->folderOpen = open;
+        notify (Change::Structure, trackId);
+    }
 }
 
 // =========================================================================================

@@ -1,6 +1,8 @@
 #pragma once
-// The main black loop screen: one column per track (header + a stack of loop cells + add
-// buttons) and a big "+" column to add tracks.
+// The main black loop screen: one row per track (a compact header strip on the left, its loops
+// to the right, then a "+" to add a loop of the chosen type), and "+ Add Track" at the bottom.
+// Multi-out instruments show their outputs and sum folder indented under them (collapsible).
+// Plain buses live on the mixer only (they appear here only if they hold loops).
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
 #include "Engine/MidiMapping.h"
@@ -28,11 +30,11 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    // Opens the "add track" menu (also used by the Track menu); anchored to the big "+" button.
+    // Opens the "add track" menu (also used by the Track menu); anchored to the "+ Add Track" button.
     void showAddTrackMenu();
 
 private:
-    class Column;
+    class Row;
     struct Content : public juce::Component { void paint (juce::Graphics&) override {} };
 
     void timerCallback() override;
@@ -50,8 +52,8 @@ private:
 
     juce::Viewport viewport;
     Content content;
-    std::vector<std::unique_ptr<Column>> columns;
-    juce::TextButton addTrackButton { "+" };
+    std::vector<std::unique_ptr<Row>> rows;
+    juce::TextButton addTrackButton { "+ Add Track" };
 
     bool needsRebuild = true;
     int tick = 0;

@@ -9,6 +9,30 @@ void MidiClip::sortNotes() {
         return a.start != b.start ? a.start < b.start : a.pitch < b.pitch; });
 }
 
+void MidiClip::doubleLength() {
+    const double len = lengthBeats;
+    if (len <= 0) return;
+    const size_t n = notes.size(), c = controllers.size();
+    notes.reserve (n * 2);
+    for (size_t i = 0; i < n; ++i) { auto x = notes[i]; x.start += len; notes.push_back (x); }
+    controllers.reserve (c * 2);
+    for (size_t i = 0; i < c; ++i) { auto e = controllers[i]; e.beat += len; controllers.push_back (e); }
+    lengthBeats = len * 2.0;
+    sortNotes();
+    std::stable_sort (controllers.begin(), controllers.end(), [] (const MidiEvent& a, const MidiEvent& b) { return a.beat < b.beat; });
+}
+
+bool MidiClip::halveLength (double minBeats) {
+    const double nl = std::max (minBeats, lengthBeats * 0.5);
+    if (nl >= lengthBeats) return false;
+    notes.erase (std::remove_if (notes.begin(), notes.end(), [nl] (const MidiNote& x) { return x.start >= nl - 1.0e-9; }), notes.end());
+    for (auto& x : notes)
+        if (x.start + x.length > nl) x.length = std::max (1.0e-3, nl - x.start);
+    controllers.erase (std::remove_if (controllers.begin(), controllers.end(), [nl] (const MidiEvent& e) { return e.beat >= nl - 1.0e-9; }), controllers.end());
+    lengthBeats = nl;
+    return true;
+}
+
 void MidiClip::quantize (double grid, float strength, bool ends) {
     if (grid <= 0) return;
     for (auto& n : notes) {

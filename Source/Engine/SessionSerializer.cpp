@@ -344,6 +344,8 @@ void writeTrack (EngineController& c, juce::XmlElement& parent, const TrackModel
     e->setAttribute ("hardwareOutput", t.hardwareOutput);
     setId (*e, "auxParent", t.auxParent);
     e->setAttribute ("auxPair", t.auxPair);
+    setId (*e, "folderOf", t.folderOf);
+    e->setAttribute ("folderOpen", t.folderOpen);
     e->setAttribute ("bounced", t.bounced);
     setId (*e, "bouncedInto", t.bouncedInto);
 
@@ -399,6 +401,8 @@ TrackPtr readTrack (const juce::XmlElement& e, const juce::File& audioDir, doubl
     t->hardwareOutput = e.getIntAttribute ("hardwareOutput", 0);
     t->auxParent = getId (e, "auxParent");
     t->auxPair = e.getIntAttribute ("auxPair", 0);
+    t->folderOf = getId (e, "folderOf");
+    t->folderOpen = e.getBoolAttribute ("folderOpen", true);
     t->bounced = e.getBoolAttribute ("bounced");
     t->bouncedInto = getId (e, "bouncedInto");
 

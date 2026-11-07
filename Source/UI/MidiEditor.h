@@ -41,6 +41,8 @@ private:
     void userChangedGrid();
     double currentGridBeats() const;
     void changeLength (int direction);
+    void doubleClip();
+    void halveClip();
     void quantizeClip();
     void updateVisibility();
 
@@ -61,6 +63,7 @@ private:
     juce::ToggleButton tripletToggle { "Triplet" }, snapToggle { "Snap" };
     juce::TextButton quantizeButton { "Quantize" };
     juce::TextButton lenMinus { "-" }, lenPlus { "+" };
+    juce::TextButton doubleButton { "x2" }, halveButton { "/2" };
     juce::Label lenLabel;
     juce::Slider velSlider;
     juce::Label velLabel;

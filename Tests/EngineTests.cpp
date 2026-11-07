@@ -231,6 +231,58 @@ static void testSaveLoadRoundTrip() {
     dir.deleteRecursively();
 }
 
+
+// Multi-out: outputs + a sum folder that the instrument and every output feed; idempotent;
+// removing the instrument removes its outputs and the folder; folder survives save/load.
+static void testMultiOutSumFolder() {
+    Offline o;
+    auto& c = o.c;
+    const Id inst = firstTrack (c, TrackKind::Instrument);
+    auto t = c.session().findTrack (inst);
+    CHECK (t != nullptr);
+    if (t == nullptr) return;
+    auto slot = std::make_shared<PluginSlot>();
+    slot->id = c.session().allocateId();
+    slot->description.name = "FakeKit"; slot->description.isInstrument = true;
+    slot->numOutputChannels = 8;   // 4 stereo pairs, no real instance (headless)
+    t->instrument = slot;
+    c.createMultiOutTracks (inst);
+    int outs = 0; Id folder = kInvalidId;
+    for (auto& x : c.session().tracks) {
+        if (x->auxParent == inst) ++outs;
+        if (x->kind == TrackKind::Bus && x->folderOf == inst) folder = x->id;
+    }
+    CHECK (outs == 3);
+    CHECK (folder != kInvalidId);
+    CHECK (c.folderBusOf (inst) != nullptr);
+    CHECK (t->outputBus == folder);
+    for (auto& x : c.session().tracks) if (x->auxParent == inst) CHECK (x->outputBus == folder);
+    if (auto f = c.session().findTrack (folder)) CHECK (f->outputBus == kMasterId);
+    o.run (0.1);   // graph with the folder renders without trouble
+
+    const size_t before = c.session().tracks.size();
+    c.createMultiOutTracks (inst);   // repeat: nothing new
+    CHECK (c.session().tracks.size() == before);
+
+    // save / load keeps the folder link
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("elooper_folder_test.elooper");
+    dir.deleteRecursively();
+    CHECK (SessionSerializer::save (c, dir).wasOk());
+    {
+        Offline o2;
+        bool done = false;
+        SessionSerializer::load (o2.c, dir, [&] (juce::Result) { done = true; });
+        for (int i = 0; i < 20 && ! done; ++i) o2.run (0.02, false);
+        bool found = false;
+        for (auto& x : o2.c.session().tracks) if (x->kind == TrackKind::Bus && x->folderOf == inst) found = true;
+        CHECK (found);   // (the fake plug-in never finishes loading headless, so `done` may stay false)
+    }
+    dir.deleteRecursively();
+    c.removeTrack (inst);
+    for (auto& x : c.session().tracks) { CHECK (x->auxParent != inst); CHECK (x->folderOf != inst); }
+    o.run (0.05);
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     testRecordLoopAndAutoMute();
@@ -239,6 +291,7 @@ int main() {
     testTimeline();
     testMidiClipDefinesTake();
     testSaveLoadRoundTrip();
+    testMultiOutSumFolder();
     std::printf (failures == 0 ? "engine tests passed\n" : "%d engine check(s) FAILED\n", failures);
     return failures == 0 ? 0 : 1;
 }

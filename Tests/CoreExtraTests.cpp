@@ -589,3 +589,33 @@ EL_TEST (pdc_aux_outputs_tap_after_instrument) {
     EL_CHECK (r.outDelay[0] == 0);
     EL_CHECK (r.total == 100);
 }
+
+EL_TEST (midi_double_repeats_pattern) {
+    MidiClip c; c.lengthBeats = 8;
+    MidiNote a; a.start = 0; a.pitch = 36; a.ratchet = 3; c.notes.push_back (a);
+    MidiNote b; b.start = 6.5; b.length = 0.5; b.pitch = 38; c.notes.push_back (b);
+    c.controllers.push_back (mkEv (1.0, 0xB0, 1, 64));
+    c.doubleLength();
+    EL_CHECK_NEAR (c.lengthBeats, 16.0, 1e-12);
+    EL_CHECK (c.notes.size() == 4);
+    EL_CHECK (c.controllers.size() == 2);
+    if (c.notes.size() == 4) {
+        EL_CHECK_NEAR (c.notes[2].start, 8.0, 1e-12);
+        EL_CHECK (c.notes[2].pitch == 36 && c.notes[2].ratchet == 3);
+        EL_CHECK_NEAR (c.notes[3].start, 14.5, 1e-12);
+    }
+    if (c.controllers.size() == 2) EL_CHECK_NEAR (c.controllers[1].beat, 9.0, 1e-12);
+}
+
+EL_TEST (midi_halve_keeps_first_half_and_trims) {
+    MidiClip c; c.lengthBeats = 16;
+    MidiNote a; a.start = 7.0; a.length = 2.0; c.notes.push_back (a);   // crosses the new end
+    MidiNote b; b.start = 8.0; c.notes.push_back (b);                   // dropped
+    MidiNote d; d.start = 1.0; c.notes.push_back (d);
+    EL_CHECK (c.halveLength());
+    EL_CHECK_NEAR (c.lengthBeats, 8.0, 1e-12);
+    EL_CHECK (c.notes.size() == 2);
+    for (auto& n : c.notes) EL_CHECK (n.start + n.length <= 8.0 + 1e-9);
+    MidiClip one; one.lengthBeats = 1;
+    EL_CHECK (! one.halveLength (1.0));
+}

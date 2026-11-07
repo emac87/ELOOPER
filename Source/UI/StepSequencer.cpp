@@ -569,43 +569,56 @@ void StepSequencer::paint (juce::Graphics& g)
     const int steps = numSteps();
     const auto area = cellsArea();
     const int ps = playStep();
-    const int firstRow = juce::jmax (0, (int) std::floor (scrollY / rowH));
-    const int lastRow = juce::jmin ((int) rows.size() - 1, (int) std::floor ((scrollY + area.getHeight()) / rowH));
-    const int firstStep = juce::jmax (0, (int) std::floor (scrollX / cellW));
-    const int lastStep = juce::jmin (steps - 1, (int) std::floor ((scrollX + area.getWidth()) / cellW));
+    // Only paint what JUCE asked for: playhead updates repaint a single column, so limiting
+    // the loops to the clip region keeps those repaints tiny however big the pattern is.
+    const auto clipR = g.getClipBounds();
+    const int firstRow = juce::jmax (0, (int) std::floor ((scrollY + juce::jmax (0, clipR.getY() - rulerH)) / rowH));
+    const int lastRow = juce::jmin ((int) rows.size() - 1, (int) std::floor ((scrollY + juce::jmin (area.getHeight(), clipR.getBottom() - rulerH)) / rowH));
+    const int firstStep = juce::jmax (0, (int) std::floor ((scrollX + juce::jmax (0, clipR.getX() - headerW)) / cellW));
+    const int lastStep = juce::jmin (steps - 1, (int) std::floor ((scrollX + juce::jmin (area.getWidth(), clipR.getRight() - headerW)) / cellW));
 
     {
         juce::Graphics::ScopedSaveState ss (g);
         g.reduceClipRegion (area);
-        std::vector<int> vel ((size_t) steps), rat ((size_t) steps);
-        std::vector<char> mutedCell ((size_t) steps);
+        // One pass over the notes fills a [row][step] table for the visible window (instead of
+        // one pass per row); scratch storage is reused between paints.
+        const int nr = juce::jmax (0, lastRow - firstRow + 1), ns = juce::jmax (0, lastStep - firstStep + 1);
+        const size_t cells = (size_t) nr * (size_t) ns;
+        if (paintScratch.size() < cells) paintScratch.resize (cells);
+        std::fill (paintScratch.begin(), paintScratch.begin() + (std::ptrdiff_t) cells, CellInfo{});
+        int rowOfPitch[128];
+        std::fill (std::begin (rowOfPitch), std::end (rowOfPitch), -1);
+        for (int r = firstRow; r <= lastRow; ++r) rowOfPitch[rows[(size_t) r] & 127] = r - firstRow;
+        if (cells > 0)
+            for (auto& n : clip->notes)
+            {
+                const int ri = rowOfPitch[n.pitch & 127];
+                if (ri < 0) continue;
+                const int s = stepForStart (n.start) - firstStep;
+                if (s < 0 || s >= ns) continue;
+                auto& ci = paintScratch[(size_t) ri * (size_t) ns + (size_t) s];
+                ci.vel = n.velocity; ci.rat = n.ratchet; ci.muted = n.muted;
+            }
         for (int r = firstRow; r <= lastRow; ++r)
         {
             const int pitch = rows[(size_t) r];
-            std::fill (vel.begin(), vel.end(), 0);
-            std::fill (rat.begin(), rat.end(), 1);
-            std::fill (mutedCell.begin(), mutedCell.end(), (char) 0);
-            for (auto& n : clip->notes)
-            {
-                if (n.pitch != pitch) continue;
-                const int s = stepForStart (n.start);
-                if (s >= 0 && s < steps) { vel[(size_t) s] = n.velocity; rat[(size_t) s] = n.ratchet; mutedCell[(size_t) s] = n.muted ? 1 : 0; }
-            }
+            const CellInfo* rowCells = paintScratch.data() + (size_t) (r - firstRow) * (size_t) ns;
             const bool rowMute = isRowMuted (pitch);
             for (int s = firstStep; s <= lastStep; ++s)
             {
+                const auto& ci = rowCells[s - firstStep];
                 const auto rc = cellRect (r, s);
                 const bool altGroup = (s / 4) % 2 == 1;
-                if (vel[(size_t) s] > 0)
+                if (ci.vel > 0)
                 {
-                    auto c = colour.withMultipliedBrightness (0.45f + 0.55f * (float) vel[(size_t) s] / 127.0f);
-                    if (rowMute || mutedCell[(size_t) s]) c = c.withMultipliedSaturation (0.2f).withAlpha (0.45f);
+                    auto c = colour.withMultipliedBrightness (0.45f + 0.55f * (float) ci.vel / 127.0f);
+                    if (rowMute || ci.muted) c = c.withMultipliedSaturation (0.2f).withAlpha (0.45f);
                     g.setColour (c);
                     g.fillRoundedRectangle (rc, 3.0f);
                     g.setColour (juce::Colours::white.withAlpha (0.18f));
                     g.drawRoundedRectangle (rc.reduced (0.5f), 3.0f, 1.0f);
                     // ratchet: split the cell into its re-triggers
-                    const int rr = rat[(size_t) s];
+                    const int rr = ci.rat;
                     if (rr > 1) {
                         g.setColour (juce::Colours::black.withAlpha (0.55f));
                         for (int k = 1; k < rr; ++k) {
@@ -615,7 +628,7 @@ void StepSequencer::paint (juce::Graphics& g)
                     }
                     // velocity bar along the bottom
                     g.setColour (juce::Colours::white.withAlpha (0.55f));
-                    g.fillRect (rc.getX() + 3.0f, rc.getBottom() - 4.0f, (rc.getWidth() - 6.0f) * (float) vel[(size_t) s] / 127.0f, 2.0f);
+                    g.fillRect (rc.getX() + 3.0f, rc.getBottom() - 4.0f, (rc.getWidth() - 6.0f) * (float) ci.vel / 127.0f, 2.0f);
                 }
                 else
                 {
@@ -773,7 +786,9 @@ void StepSequencer::mouseDrag (const juce::MouseEvent& e)
             begin();
             velNow = v;
             setStepVelocity (rows[(size_t) velRow], velStep, v);
-            repaint();
+            const auto rc = cellRect (velRow, velStep);
+            repaint (rc.getUnion (rc.translated (0, -rowH).withHeight (26).withWidth (juce::jmax (44.0f, rc.getWidth())))
+                       .getSmallestIntegerContainer().expanded (2));
         }
         return;
     }

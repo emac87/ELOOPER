@@ -125,8 +125,12 @@ public:
     bool isPluginEditorOpen (Id slotId) const { return plugins.isEditorOpen (slotId); }
     juce::MemoryBlock getPluginState (Id slotId) const;
     void setPluginState (Id slotId, const juce::MemoryBlock& state);
-    // Multi-out: creates AuxOut tracks for every extra stereo pair of the track's instrument.
+    // Multi-out: creates AuxOut tracks for every extra stereo pair of the track's instrument,
+    // plus a sum folder (a Bus) that the instrument and all its outputs feed. Safe to repeat:
+    // only what is missing is created, and the routing is (re)applied.
     void createMultiOutTracks (Id trackId);
+    TrackPtr folderBusOf (Id instrumentTrackId) const;   // the instrument's sum folder, if any
+    void setFolderOpen (Id instrumentTrackId, bool open); // loop page: show / hide its outputs
 
     // ---- presets -----------------------------------------------------------------------
     ChannelPreset captureChannelPreset (Id trackId) const;

@@ -48,6 +48,11 @@ struct MidiClip {
     static MidiClip fromEvents (const std::vector<MidiEvent>& events, double lengthBeats);
     // Merge newly recorded raw events into this clip (overdub).
     void mergeEvents (const std::vector<MidiEvent>& events);
+    // Double the length and repeat the existing pattern into the new half.
+    void doubleLength();
+    // Halve the length (minimum `minBeats`), keeping the first half; notes that ran past the
+    // new end are shortened. Returns false if the clip is already at the minimum.
+    bool halveLength (double minBeats = 1.0);
 };
 
 // Immutable, sorted playback form handed to the audio thread.

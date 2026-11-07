@@ -6,57 +6,60 @@
 namespace el {
 
 namespace {
-    constexpr int colWidth = theme::stripWidth;
-    constexpr int colGap = 10;
-    constexpr int cellStep = theme::loopCellSize + 4;
-    constexpr int addAreaH = 112;
-    constexpr int pad = 14;
-    constexpr int addColWidth = 104;
+    constexpr int headerW = TrackHeader::defaultWidth;
+    constexpr int indent = 22;                              // multi-out outputs / sum folder
+    constexpr int rowGap = 6;
+    constexpr int rowStep = TrackHeader::rowHeight + rowGap;
+    constexpr int cellStep = theme::loopCellSize + 6;
+    constexpr int cellsX = headerW + 10;                    // loops start here on every row
+    constexpr int plusW = 44;
+    constexpr int pad = 12;
+    constexpr int addTrackH = 40;
 }
 
-// ---- one track column -----------------------------------------------------------------------
-class LoopGrid::Column : public juce::Component {
+// ---- one track row --------------------------------------------------------------------------
+class LoopGrid::Row : public juce::Component {
 public:
-    Column (LoopGrid& g, TrackPtr track)
+    Row (LoopGrid& g, TrackPtr track, int indentPx, bool topLevel)
         : trackId (track->id), grid (g), isInstrument (track->kind == TrackKind::Instrument),
-          header (g.controller, g.selection, g.presets, track->id)
+          isTopLevel (topLevel), indentX (indentPx),
+          header (g.controller, g.selection, g.presets, track->id, headerW - indentPx)
     {
         addAndMakeVisible (header);
-        header.onReorderDrop = [this] (const juce::MouseEvent& e) { grid.reorderDrop (trackId, e); };
+        if (topLevel) header.onReorderDrop = [this] (const juce::MouseEvent& e) { grid.reorderDrop (trackId, e); };
 
         for (auto& l : track->loops) {
             auto* c = cells.add (new LoopCell (g.controller, g.selection, g.midiMap, track->id, l->id));
             c->onEdit = [this] (Id t, Id l2, bool midi) { if (grid.onEditLoop) grid.onEditLoop (t, l2, midi); };
             addAndMakeVisible (c);
         }
-        setupButton (plusButton, "+", "Add a loop (choose the type)");
-        setupButton (addAudio, "+A", "Add an audio loop");
-        setupButton (addMidi, "+M", "Add a MIDI loop");
-        setupButton (addAuto, "+Auto", "Add an automation loop");
-        addAudio.setEnabled (! isInstrument);
-        addMidi.setEnabled (isInstrument);
+        plusButton.setButtonText ("+");
+        plusButton.setTooltip (isInstrument ? "Add a loop: MIDI or automation" : "Add a loop: audio or automation");
+        plusButton.setColour (juce::TextButton::buttonColourId, theme::panel);
+        plusButton.setColour (juce::TextButton::textColourOffId, theme::accent);
         plusButton.onClick = [this] { showTypeMenu(); };
-        addAudio.onClick = [this] { add (LoopType::Audio); };
-        addMidi.onClick = [this] { add (LoopType::Midi); };
-        addAuto.onClick = [this] { add (LoopType::Automation); };
-        setSize (colWidth, heightFor ((int) track->loops.size()));
+        addAndMakeVisible (plusButton);
+        setSize (widthFor ((int) track->loops.size()), TrackHeader::rowHeight);
     }
 
-    static int heightFor (int numLoops)
+    static int widthFor (int numLoops) { return cellsX + numLoops * cellStep + plusW; }
+
+    void paint (juce::Graphics& g) override
     {
-        return TrackHeader::headerHeight + 8 + numLoops * cellStep + addAreaH;
+        if (indentX > 0) {   // a thin guide line showing the outputs belong to the instrument above
+            g.setColour (theme::outline);
+            g.fillRect (indentX / 2 - 1, -rowGap, 2, getHeight() + rowGap);
+            g.fillRect (indentX / 2, getHeight() / 2, indentX / 2 - 2, 2);
+        }
     }
 
     void resized() override
     {
-        header.setBounds (0, 0, colWidth, TrackHeader::headerHeight);
-        int y = TrackHeader::headerHeight + 8;
-        for (auto* c : cells) { c->setTopLeftPosition ((colWidth - theme::loopCellSize) / 2, y); y += cellStep; }
-        plusButton.setBounds (4, y, colWidth - 8, 34);
-        const int w = (colWidth - 8 - 4) / 2;
-        addAudio.setBounds (4, y + 38, w, 32);
-        addMidi.setBounds (4 + w + 4, y + 38, w, 32);
-        addAuto.setBounds (4, y + 74, colWidth - 8, 32);
+        header.setBounds (indentX, 0, headerW - indentX, TrackHeader::rowHeight);
+        int x = cellsX;
+        const int y = (TrackHeader::rowHeight - theme::loopCellSize) / 2;
+        for (auto* c : cells) { c->setTopLeftPosition (x, y); x += cellStep; }
+        plusButton.setBounds (x, y, plusW - 6, theme::loopCellSize);
     }
 
     void refreshAll()
@@ -72,42 +75,31 @@ public:
 
     const Id trackId;
     TrackHeader& getHeader() { return header; }
+    bool topLevel() const noexcept { return isTopLevel; }
 
 private:
-    void setupButton (juce::TextButton& b, const juce::String& text, const juce::String& tip)
-    {
-        b.setButtonText (text);
-        b.setTooltip (tip);
-        b.setColour (juce::TextButton::buttonColourId, theme::panel);
-        addAndMakeVisible (b);
-    }
-
-    void add (LoopType type)
-    {
-        const Id id = grid.controller.addLoop (trackId, type);
-        if (id != kInvalidId) grid.selection.select (trackId, id);
-    }
-
     void showTypeMenu()
     {
         auto* c = &grid.controller; auto* sel = &grid.selection;
         const Id tid = trackId;
-        ActionMenu am;
-        juce::PopupMenu m;
         auto make = [c, sel, tid] (LoopType t) {
             return [c, sel, tid, t] { const Id id = c->addLoop (tid, t); if (id != kInvalidId) sel->select (tid, id); };
         };
-        am.add (m, "Audio Loop", make (LoopType::Audio), false, ! isInstrument);
-        am.add (m, "MIDI Loop", make (LoopType::Midi), false, isInstrument);
+        ActionMenu am;
+        juce::PopupMenu m;
+        m.addSectionHeader ("Add loop");
+        if (isInstrument) am.add (m, "MIDI Loop", make (LoopType::Midi));
+        else am.add (m, "Audio Loop", make (LoopType::Audio));
         am.add (m, "Automation Loop", make (LoopType::Automation));
         am.show (m, &plusButton);
     }
 
     LoopGrid& grid;
-    const bool isInstrument;
+    const bool isInstrument, isTopLevel;
+    const int indentX;
     TrackHeader header;
     juce::OwnedArray<LoopCell> cells;
-    juce::TextButton plusButton, addAudio, addMidi, addAuto;
+    juce::TextButton plusButton;
 };
 
 // ---- grid -----------------------------------------------------------------------------------
@@ -116,10 +108,12 @@ LoopGrid::LoopGrid (EngineController& c, Selection& s, MidiMapping& mm, PresetMa
 {
     viewport.setViewedComponent (&content, false);
     viewport.setScrollBarsShown (true, true);
+    viewport.setScrollBarThickness (10);
     addAndMakeVisible (viewport);
 
     addTrackButton.setTooltip ("Add a track: audio, instrument or bus");
     addTrackButton.setColour (juce::TextButton::buttonColourId, theme::panel);
+    addTrackButton.setColour (juce::TextButton::textColourOffId, theme::accent);
     addTrackButton.onClick = [this] { showAddTrackMenu(); };
     content.addAndMakeVisible (addTrackButton);
 
@@ -150,14 +144,14 @@ void LoopGrid::sessionChanged (Change what, Id id)
     switch (what) {
         case Change::Structure:
         case Change::Session:
-            needsRebuild = true;   // deferred to the timer: never destroy a column inside its own callback
+            needsRebuild = true;   // deferred to the timer: never destroy a row inside its own callback
             break;
         case Change::Track:
-            for (auto& col : columns)
-                if (col->trackId == id) col->refreshAll();
+            for (auto& r : rows)
+                if (r->trackId == id) r->refreshAll();
             break;
         case Change::Loop:
-            for (auto& col : columns) col->refreshAll();
+            for (auto& r : rows) r->refreshAll();
             break;
         case Change::Clip: case Change::Automation: case Change::Transport: case Change::Timeline: break;
     }
@@ -165,48 +159,61 @@ void LoopGrid::sessionChanged (Change what, Id id)
 
 void LoopGrid::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    for (auto& col : columns) col->getHeader().repaint();
+    for (auto& r : rows) r->getHeader().repaint();
 }
 
 void LoopGrid::timerCallback()
 {
     if (needsRebuild) rebuild();
+    if (! isShowing()) return;   // the timeline / bounced page is up: nothing to poll
     ++tick;
     const bool blink = ((tick / 8) & 1) == 0;
-    for (auto& col : columns) col->poll (blink);
+    for (auto& r : rows) r->poll (blink);
 }
 
 void LoopGrid::rebuild()
 {
     needsRebuild = false;
-    columns.clear();
-    const auto& tracks = controller.session().tracks;
-    std::vector<TrackPtr> ordered;
-    for (auto& t : tracks)
-        if (! t->bounced && t->kind != TrackKind::Master && t->kind != TrackKind::Bus) ordered.push_back (t);
-    for (auto& t : tracks)
-        if (! t->bounced && t->kind == TrackKind::Bus) ordered.push_back (t);
+    const auto viewPos = viewport.getViewPosition();
+    for (auto& r : rows) content.removeChildComponent (r.get());
+    rows.clear();
 
-    for (auto& t : ordered) {
-        auto col = std::make_unique<Column> (*this, t);
-        content.addAndMakeVisible (*col);
-        columns.push_back (std::move (col));
+    const auto& tracks = controller.session().tracks;
+    auto add = [this] (const TrackPtr& t, int ind, bool top) {
+        auto row = std::make_unique<Row> (*this, t, ind, top);
+        content.addAndMakeVisible (*row);
+        rows.push_back (std::move (row));
+    };
+
+    for (auto& t : tracks) {
+        if (t->bounced || t->kind == TrackKind::Master || t->kind == TrackKind::Bus) continue;
+        if (t->kind == TrackKind::AuxOut && controller.session().findTrack (t->auxParent) != nullptr) continue;   // shown in its group
+        add (t, 0, true);
+        if (t->kind != TrackKind::Instrument || ! t->folderOpen) continue;
+        for (auto& o : tracks)
+            if (! o->bounced && o->kind == TrackKind::AuxOut && o->auxParent == t->id) add (o, indent, false);
+        if (auto f = controller.folderBusOf (t->id); f && ! f->bounced) add (f, indent, false);
     }
+    // Plain buses are mixer-only; one that holds loops still shows here so they stay reachable.
+    for (auto& t : tracks)
+        if (! t->bounced && t->kind == TrackKind::Bus && t->folderOf == kInvalidId && ! t->loops.empty()) add (t, 0, true);
+
     layoutContent();
+    viewport.setViewPosition (viewPos);
 }
 
 void LoopGrid::layoutContent()
 {
-    int x = pad, maxH = 0;
-    for (auto& col : columns) {
-        col->setTopLeftPosition (x, pad);
-        x += colWidth + colGap;
-        maxH = juce::jmax (maxH, col->getHeight());
+    int y = pad, maxW = headerW;
+    for (auto& r : rows) {
+        r->setTopLeftPosition (pad, y);
+        y += rowStep;
+        maxW = juce::jmax (maxW, r->getWidth());
     }
-    addTrackButton.setBounds (x, pad, addColWidth, TrackHeader::headerHeight);
-    maxH = juce::jmax (maxH, TrackHeader::headerHeight);
-    content.setSize (juce::jmax (x + addColWidth + pad, viewport.getMaximumVisibleWidth()),
-                     juce::jmax (maxH + pad * 2, viewport.getMaximumVisibleHeight()));
+    addTrackButton.setBounds (pad, y, headerW, addTrackH);
+    y += addTrackH;
+    content.setSize (juce::jmax (pad + maxW + pad, viewport.getMaximumVisibleWidth()),
+                     juce::jmax (y + pad, viewport.getMaximumVisibleHeight()));
 }
 
 void LoopGrid::showAddTrackMenu()
@@ -220,20 +227,23 @@ void LoopGrid::showAddTrackMenu()
         const Id id = c->addTrack (TrackKind::Instrument);
         if (id != kInvalidId) showPluginMenu (*c, id, FxChain::Instrument, 0, target.getComponent());
     });
-    am.add (m, "Add Bus", [c] { c->addTrack (TrackKind::Bus); });
+    am.add (m, "Add Bus (shown on the mixer)", [c] { c->addTrack (TrackKind::Bus); });
     am.show (m, &addTrackButton);
 }
 
 void LoopGrid::reorderDrop (Id trackId, const juce::MouseEvent& e)
 {
-    if (columns.empty()) return;
-    const int x = e.getEventRelativeTo (&content).x;
-    const int idx = juce::jlimit (0, (int) columns.size() - 1, (x - pad + colGap / 2) / (colWidth + colGap));
-    const Id target = columns[(size_t) idx]->trackId;
+    if (rows.empty()) return;
+    const int y = e.getEventRelativeTo (&content).y;
+    const int idx = juce::jlimit (0, (int) rows.size() - 1, (y - pad + rowGap / 2) / rowStep);
+    // Drop onto a group's output row = drop onto the group's instrument.
+    int i = idx;
+    while (i > 0 && ! rows[(size_t) i]->topLevel()) --i;
+    const Id target = rows[(size_t) i]->trackId;
     if (target == trackId) return;
     const auto& tracks = controller.session().tracks;
-    for (size_t i = 0; i < tracks.size(); ++i)
-        if (tracks[i]->id == target) { controller.moveTrack (trackId, (int) i); return; }
+    for (size_t k = 0; k < tracks.size(); ++k)
+        if (tracks[k]->id == target) { controller.moveTrack (trackId, (int) k); return; }
 }
 
 } // namespace el

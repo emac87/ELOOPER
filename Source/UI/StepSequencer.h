@@ -59,6 +59,9 @@ private:
 
     juce::TextButton lanesButton { "Lanes" }, ratchetButton;
 
+    struct CellInfo { int vel = 0; int rat = 1; bool muted = false; };
+    std::vector<CellInfo> paintScratch;   // reused by paint()
+
     struct LaneClipboard { bool valid = false; std::vector<MidiNote> notes; };
     static LaneClipboard& clipboard();
 
