@@ -48,7 +48,7 @@ The **transport bar** across the top holds:
 - **Docks**: **Mixer**, **Auto** (automation) and **Editor** (the MIDI editor). Each dock opens below the page. Drag the bar between the page and a dock to resize it.
 - **Settings** and a CPU readout.
 
-The **Loops** page is the main screen. Each track is a column. Each loop on the track is a cell in that column. Click a cell to select it.
+The **Loops** page is the main screen. Each track is a row: a compact header strip on the left, then the track's loops as cells to the right. Click a cell to select it. Plain buses are shown on the mixer only (a bus that holds loops still appears at the bottom of the Loops page).
 
 ## Tracks
 
@@ -64,19 +64,19 @@ There are five kinds of track:
 
 A new session starts with one audio track and one instrument track.
 
-**Adding tracks:** click the **+** button at the end of the track row and choose Audio, Instrument or Bus. You can also use the **Track** menu (Add Audio Track, Add Instrument Track, Add Bus).
+**Adding tracks:** click **+ Add Track** below the last track and choose Audio, Instrument or Bus. You can also use the **Track** menu (Add Audio Track, Add Instrument Track, Add Bus).
 
 **Plug-in icon:** the icon at the top left of each track header shows the type of plug-in on the track (synth, drums, sampler, keys, EQ, compressor, reverb, delay, MIDI effect and so on), or the channel type when the track has no plug-in. Click it to show or hide that plug-in's window; the icon lights up while a window is open. Right-click it to show or hide any plug-in on the track, or all of them at once. Plug-in windows float above ELooper while it is the active app.
 
-**Adding loops:** each track column has a **+** button that opens a menu of Audio, MIDI or Automation loops. Below it are the **+A**, **+M** and **+Auto** buttons for the same loop types. The audio and MIDI buttons are disabled on tracks where they do not apply.
+**Adding loops:** each track row ends with a **+** button. It opens a menu with the loop types that fit the track: Audio or Automation on audio tracks, MIDI or Automation on instrument tracks.
 
-**Track header:** the header at the top of each column shows the track name, input or instrument, and output. Its buttons are:
+**Track header:** the strip at the left of each row has three lines.
 
-- **Mute** and **Solo**.
-- **Arm**: record-arm. An armed track forces its input to be heard.
-- **Monitor**: cycles through Auto, On and Off. In Auto, the live input is heard until a loop is recorded (see [Recording a first loop](#recording-a-first-loop)).
+- **Top line:** the plug-in icon, the track name, its input (or MIDI input) and where it goes (`> Master` or `> <bus>`), then **M** (mute), **S** (solo), the red **arm** button (record-arm; an armed track forces its input to be heard) and **Monitor** (cycles Auto, On and Off; in Auto the live input is heard until a loop is recorded, see [Recording a first loop](#recording-a-first-loop)).
+- **Middle line:** **In** (input gain), **Vol** (volume) and **Pan** bars, and a stereo meter. Drag a bar left/right or up/down to change it (it never jumps to where you click). Hold Shift for fine changes. Double-click to reset (0 dB, or centre for pan). The mouse wheel scrolls the page and never changes a level.
+- **Bottom line:** the track's plug-ins and sends. On an instrument track the instrument comes first (**+ Instrument** if none is loaded), then MIDI effects and insert effects. Click a plug-in to show or hide its window. Click the dot on an effect to bypass it (grey dot = bypassed). Right-click a plug-in for Show/Hide window, Bypass, Replace (instrument), Presets, Move left/right, Move before/after the fader, and Remove. **+FX** adds an effect (on instrument tracks it asks whether you want an audio or a MIDI effect). Each send is a bar with the bus name and level: drag it to set the level, right-click it for Pre-fader / Post-fader or Remove send. **+Send** sends the track to a bus, or makes a new bus and sends to it. If a track has more than fits, **...** lists everything.
 
-Double-click a track name to rename it. Drag a header sideways to reorder tracks.
+Double-click a track name to rename it. Drag a header up or down to reorder tracks.
 
 **Track right-click menu** (for Audio, Instrument and Bus tracks where listed):
 
@@ -87,7 +87,7 @@ Double-click a track name to rename it. Drag a header sideways to reorder tracks
 - **Monitor**: Auto, On or Off.
 - **Output**: Master, or a bus. Not available on Master.
 - **Channel Presets...**
-- **Create Multi-Out Tracks**: instrument tracks only. See [Mixer and routing](#mixer-and-routing).
+- **Multi-Out: Create Outputs + Sum Folder**: instrument tracks whose instrument has more than one stereo output. See [Mixer and routing](#mixer-and-routing).
 - **Bounce Track** and **Remove Track**. Not available on Master.
 
 ## Recording a first loop
@@ -158,6 +158,8 @@ Add a MIDI loop with **+M** on an instrument track, or from the track's **+** me
 
 To edit a MIDI loop, double-click it, or right-click and choose **Edit MIDI**. The editor opens in the **Editor** dock (`E`). It has two tabs:
 
+**Length** (both views): **-** and **+** change the loop by one bar. **x2** doubles the loop and repeats the pattern into the new bars (2 bars become 4, with the same notes in bars 3-4). **/2** halves it and keeps the first half (notes that ran past the new end are shortened). Both can be undone with `⌘Z`.
+
 **Piano Roll** shows notes on a time and pitch grid.
 
 - Grid: 1/4, 1/8, 1/16 or 1/32, with **triplet** and **snap** toggles, and a **Quantize** button.
@@ -212,9 +214,9 @@ Open the **Mixer** dock (`M`). Each track has a channel strip, from top to botto
 
 **Sends:** a send sends part of a track to a bus. Add a send from the **SENDS** section and choose a bus. Each send has a level, and **PRE** or **POST** sets whether it is taken before or after the fader. Right-click a send and choose **Remove send** to delete it.
 
-**Buses:** add one from the **Track** menu or the **+** at the end of the track row. A track or bus can send to Master or to any other bus. ELooper refuses an output or send that would create a feedback cycle, and shows an alert.
+**Buses:** add one from the **Track** menu, **+ Add Track**, or **+Send** > **New bus + send** on a track. Buses are shown on the mixer only. A track or bus can send to Master or to any other bus. ELooper refuses an output or send that would create a feedback cycle, and shows an alert.
 
-**Multi-output instruments:** an instrument can produce more than one stereo pair. Right-click the instrument track and choose **Create Multi-Out Tracks**. This adds one AuxOut track for each extra pair. Each AuxOut track is labelled with its pair number, such as **Pair 2**, and takes its audio from that pair of the instrument.
+**Multi-output instruments:** an instrument can produce more than one stereo pair (for example one per drum in a kit). Right-click the instrument track and choose **Multi-Out: Create Outputs + Sum Folder**. This adds one AuxOut track for each extra pair (labelled with its outputs, such as **Output 3/4**) and a **Sum** folder channel. The instrument's main output and every AuxOut feed the Sum channel, and the Sum channel goes where the instrument used to go, so one fader controls the whole kit while each output keeps its own volume, pan, effects and sends. On the Loops page the outputs and the Sum channel sit indented under the instrument. Click the **outs** button on the instrument header to fold them away or show them again. Choosing the menu item again only adds what is missing. Removing the instrument track removes its outputs and its Sum folder.
 
 ## Plug-ins and presets
 

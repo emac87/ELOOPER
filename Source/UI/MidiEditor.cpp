@@ -427,7 +427,7 @@ void MidiEditor::quantizeClip()
 
 void MidiEditor::timerCallback()
 {
-    if (loopId == kInvalidId) return;
+    if (loopId == kInvalidId || ! isShowing()) return;
     const auto st = controller.loopStatus (loopId);
     const bool vis = st.state == LoopState::Playing || st.state == LoopState::Overdubbing || st.state == LoopState::Recording;
     piano.setPlayhead (st.phaseBeats, vis);

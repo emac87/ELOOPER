@@ -104,14 +104,20 @@ void LoopCell::poll (bool blinkOn)
     const bool blinkChanged = s.pending != PendingAction::None && blinkOn != blink;
     const bool textChanged = s.numTakes != status.numTakes || s.activeTake != status.activeTake
                              || std::abs (s.lengthBeats - status.lengthBeats) > 1.0e-6;
-    if (s.state != status.state || s.pending != status.pending || step != ringStep || sel != selected
-        || blinkChanged || textChanged) {
+    if (s.state != status.state || s.pending != status.pending || sel != selected || blinkChanged || textChanged) {
         status = s;
         ringStep = step;
         selected = sel;
         blink = blinkOn;
         if (textChanged) updateTexts();
         repaint();
+    } else if (step != ringStep) {
+        // Only the progress ring moved (the common case while playing): redraw just the ring.
+        status = s;
+        ringStep = step;
+        blink = blinkOn;
+        const float r = ringRadius + ringThickness;
+        repaint (juce::Rectangle<float> (getWidth() * 0.5f - r - 2.0f, ringCentreY - r, (r + 2.0f) * 2.0f, r * 2.0f).getSmallestIntegerContainer());
     } else {
         blink = blinkOn;
     }

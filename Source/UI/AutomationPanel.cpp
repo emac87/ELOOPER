@@ -185,7 +185,7 @@ void AutomationPanel::timerCallback()
     ++ticksSinceRefresh;
     if (dirty && ticksSinceRefresh >= 3) refresh();     // at most ~10 refreshes per second
 
-    if (! ownerValid) return;
+    if (! ownerValid || ! isShowing()) return;
     bool vis = false; double beat = 0;
     if (owner.loopId != kInvalidId)
     {

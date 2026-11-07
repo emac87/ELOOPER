@@ -326,6 +326,7 @@ void TimelineView::paint (juce::Graphics& g)
 // ---- timer / follow ----------------------------------------------------------------------
 void TimelineView::timerCallback()
 {
+    if (! isShowing()) return;
     const auto ts = controller.transportStatus();
     bool needRepaint = false;
     if (std::abs (beatToX (ts.beat) - beatToX (playBeat)) >= 1.0f || ts.playing != playing) needRepaint = true;
