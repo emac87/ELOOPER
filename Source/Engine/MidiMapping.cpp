@@ -4,7 +4,8 @@ namespace el {
 
 using Kind = MappingTarget::Kind;
 
-static const char* kindNames[] = { "TriggerLoop", "RecordLoop", "StopLoop", "PlayStop", "Record", "StopAll", "TapTempo", "Param" };
+static const char* kindNames[] = { "TriggerLoop", "RecordLoop", "StopLoop", "PlayStop", "Record", "StopAll", "TapTempo", "Param", "Scene" };
+static constexpr int kNumKinds = (int) (sizeof (kindNames) / sizeof (kindNames[0]));
 
 juce::File MidiMapping::storeFile() { return PluginHost::appDataDir().getChildFile ("midi-mappings.xml"); }
 
@@ -126,6 +127,7 @@ void MidiMapping::dispatch (const Mapping& mp, int value, bool isNoteOn)
                 if (auto id = selectedLoopProvider(); id != kInvalidId) controller.triggerLoop (id);
             break;
         case Kind::StopAll:     controller.stopAllLoops(); break;
+        case Kind::Scene:       controller.launchScene ((int) t.loopId); break;
         case Kind::TapTempo:    controller.tapTempo(); break;
         case Kind::Param:
         {
@@ -214,6 +216,7 @@ juce::String MidiMapping::describe (const MappingTarget& t) const
         case Kind::PlayStop: return "Play / Stop";
         case Kind::Record:   return "Record selected loop";
         case Kind::StopAll:  return "Stop all loops";
+        case Kind::Scene:    return "Scene " + juce::String ((int) t.loopId + 1);
         case Kind::TapTempo: return "Tap tempo";
         case Kind::Param:
         {
@@ -279,7 +282,7 @@ void MidiMapping::load()
         Mapping m;
         const auto kind = e->getStringAttribute ("kind");
         bool ok = false;
-        for (int i = 0; i < 8; ++i)
+        for (int i = 0; i < kNumKinds; ++i)
             if (kind == kindNames[i]) { m.target.kind = (Kind) i; ok = true; }
         if (! ok) continue;
         m.target.trackId = (Id) e->getIntAttribute ("track");

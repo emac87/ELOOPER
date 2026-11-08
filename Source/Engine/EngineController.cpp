@@ -1003,6 +1003,40 @@ void EngineController::stopAllLoops() {
     audioEngine->send (e);
 }
 
+std::vector<LoopPtr> EngineController::sceneLoops (const TrackModel& t) const {
+    std::vector<LoopPtr> out;
+    for (auto& l : t.loops) if (l && isSceneLoop (*l)) out.push_back (l);
+    return out;
+}
+
+int EngineController::numScenes() const {
+    size_t n = 0;
+    for (auto& t : sessionPtr->tracks)
+        if (! t->bounced) n = std::max (n, sceneLoops (*t).size());
+    return (int) n;
+}
+
+void EngineController::launchScene (int index) {
+    if (index < 0) return;
+    for (auto& t : sessionPtr->tracks) {
+        if (t->bounced) continue;
+        const auto loops = sceneLoops (*t);
+        for (int i = 0; i < (int) loops.size(); ++i) {
+            auto& l = loops[(size_t) i];
+            if (! l->rt) continue;
+            const auto st = l->rt->uiState.load();
+            const auto pend = l->rt->uiPending.load();
+            if (i == index) {
+                if (st == LoopState::Stopped && pend != PendingAction::Play) playLoop (l->id);
+                else if (st == LoopState::Playing && pend == PendingAction::Stop) triggerLoop (l->id);   // cancel its pending stop
+            } else if (st == LoopState::Playing || st == LoopState::Overdubbing
+                       || (st == LoopState::Stopped && pend != PendingAction::None)) {
+                stopLoop (l->id);   // also cancels a pending start
+            }
+        }
+    }
+}
+
 void EngineController::duplicateLoop (Id id) {
     auto src = sessionPtr->findLoop (id);
     if (! src || src->type == LoopType::Audio) return;

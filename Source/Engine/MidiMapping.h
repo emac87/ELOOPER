@@ -11,7 +11,7 @@
 namespace el {
 
 struct MappingTarget {
-    enum class Kind { TriggerLoop, RecordLoop, StopLoop, PlayStop, Record /*selected loop*/, StopAll, TapTempo, Param } kind = Kind::PlayStop;
+    enum class Kind { TriggerLoop, RecordLoop, StopLoop, PlayStop, Record /*selected loop*/, StopAll, TapTempo, Param, Scene /*loopId = scene index*/ } kind = Kind::PlayStop;
     Id trackId = 0; Id loopId = 0; ParamTarget param;
 };
 

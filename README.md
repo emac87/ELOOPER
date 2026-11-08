@@ -24,7 +24,7 @@ The first build downloads JUCE and Ableton Link and takes a few minutes. On firs
 ## Features
 
 **Loops**
-- Audio, MIDI and automation loops. Every loop has an automation layer that can drive any parameter on its track while the loop plays.
+- Audio and MIDI loops, with Ableton-style scenes (launch a column, stop the rest). Every loop has an automation layer; automation-only loops are hidden while automation is redesigned.
 - Quantised start and stop for each loop: None, Beat, Bar, 2 Bars, 4 Bars, or the master loop length.
 - Master bars set the default record length. A loop can instead record a fixed number of bars, or record freely.
 - After-record behaviour (play, overdub or stop), and playback as a loop or a one-shot.

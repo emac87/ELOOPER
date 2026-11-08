@@ -18,7 +18,7 @@ namespace el::theme {
     inline const juce::Colour meterMid     { 0xffffd60a };
     inline const juce::Colour meterHigh    { 0xffff3b30 };
     constexpr int   transportHeight = 64;
-    constexpr int   stripWidth      = 104;
+    constexpr int   stripWidth      = 156;
     constexpr int   loopCellSize    = 96;
     constexpr float cornerRadius    = 6.0f;
     constexpr int   uiRefreshHz     = 30;

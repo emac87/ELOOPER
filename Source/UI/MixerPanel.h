@@ -1,9 +1,11 @@
 #pragma once
-// The show/hide-able mixer: a scrolling row of channel strips plus the master strip pinned right.
+// The show/hide-able mixer: a scrolling row of vertical channel strips (each track, with a
+// multi-out instrument's outputs and sum folder beside it, then the buses) plus master pinned right.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
 #include "UI/Selection.h"
 #include "UI/ChannelStrip.h"
+#include "Engine/PresetManager.h"
 
 namespace el {
 
@@ -13,11 +15,9 @@ class MixerPanel : public juce::Component,
                    private juce::Timer,
                    private juce::AsyncUpdater {
 public:
-    MixerPanel (EngineController&, Selection&);
+    MixerPanel (EngineController&, Selection&, PresetManager&);
     ~MixerPanel() override;
 
-    // Set by MainComponent: show the plugin-preset menu for a plugin slot anchored at a component.
-    std::function<void (Id slotId, juce::Component*)> onPluginPresetMenu;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -35,6 +35,7 @@ private:
 
     EngineController& controller;
     Selection& selection;
+    PresetManager& presets;
     juce::Viewport viewport;
     juce::Component stripHolder;
     std::vector<std::unique_ptr<ChannelStrip>> strips;

@@ -283,6 +283,39 @@ static void testMultiOutSumFolder() {
     o.run (0.05);
 }
 
+// Scenes: scene N plays the N-th loop of every track and stops the others; automation loops
+// are not counted; empty slots stay empty.
+static void testScenes() {
+    std::printf ("scenes\n");
+    Offline o;
+    auto& c = o.c;
+    const Id inst = firstTrack (c, TrackKind::Instrument);
+    const Id auto0 = c.addLoop (inst, LoopType::Automation);   // hidden: not a scene slot
+    const Id a = c.addLoop (inst, LoopType::Midi);
+    const Id b = c.addLoop (inst, LoopType::Midi);
+    const Id inst2 = c.addTrack (TrackKind::Instrument);
+    const Id a2 = c.addLoop (inst2, LoopType::Midi);
+    const Id empty2 = c.addLoop (inst2, LoopType::Midi);        // scene 2 slot left empty on track 2
+    MidiClip clip; clip.lengthBeats = 4; clip.notes.push_back ({ 0, 1, 60, 100, 1, false });
+    c.setMidiClip (a, clip); c.setMidiClip (b, clip); c.setMidiClip (a2, clip);
+    o.run (0.05, false);
+    CHECK (c.numScenes() == 2);
+    (void) auto0;
+
+    c.launchScene (0);
+    o.run (2.5, false);   // past the next bar
+    CHECK (c.loopStatus (a).state == LoopState::Playing);
+    CHECK (c.loopStatus (a2).state == LoopState::Playing);
+    CHECK (c.loopStatus (b).state == LoopState::Stopped);
+
+    c.launchScene (1);
+    o.run (2.5, false);
+    CHECK (c.loopStatus (a).state == LoopState::Stopped);
+    CHECK (c.loopStatus (b).state == LoopState::Playing);
+    CHECK (c.loopStatus (a2).state == LoopState::Stopped);
+    CHECK (c.loopStatus (empty2).state == LoopState::Empty);   // never starts recording
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     testRecordLoopAndAutoMute();
@@ -292,6 +325,7 @@ int main() {
     testMidiClipDefinesTake();
     testSaveLoadRoundTrip();
     testMultiOutSumFolder();
+    testScenes();
     std::printf (failures == 0 ? "engine tests passed\n" : "%d engine check(s) FAILED\n", failures);
     return failures == 0 ? 0 : 1;
 }

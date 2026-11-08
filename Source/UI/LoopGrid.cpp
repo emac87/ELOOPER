@@ -2,12 +2,13 @@
 #include "UI/LookAndFeel.h"
 #include "UI/ColourPicker.h"
 #include "UI/PluginBrowser.h"
+#include "Engine/MidiMapping.h"
 
 namespace el {
 
 namespace {
     constexpr int headerW = TrackHeader::defaultWidth;
-    constexpr int indent = 22;                              // multi-out outputs / sum folder
+    constexpr int indent = 16;                              // multi-out outputs / sum folder
     constexpr int rowGap = 6;
     constexpr int rowStep = TrackHeader::rowHeight + rowGap;
     constexpr int cellStep = theme::loopCellSize + 6;
@@ -15,7 +16,87 @@ namespace {
     constexpr int plusW = 44;
     constexpr int pad = 12;
     constexpr int addTrackH = 40;
+    constexpr int sceneH = 30;                              // scene bar above the rows
 }
+
+// ---- scene bar: Stop all + one launch button above each loop column -----------------------------
+class LoopGrid::SceneBar : public juce::Component, public juce::SettableTooltipClient {
+public:
+    explicit SceneBar (LoopGrid& g) : grid (g) {}
+    void setCount (int n) { if (n != count) { count = n; repaint(); } }
+    int getCount() const noexcept { return count; }
+    void setLit (int scene) { if (scene != lit) { lit = scene; repaint(); } }
+
+    juce::Rectangle<int> stopRect() const { return { 0, 0, headerW, sceneH }; }
+    juce::Rectangle<int> sceneRect (int i) const { return { cellsX + i * cellStep, 0, theme::loopCellSize, sceneH }; }
+    int sceneAt (juce::Point<int> p) const
+    {
+        for (int i = 0; i < count; ++i) if (sceneRect (i).contains (p)) return i;
+        return -1;
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto drawBtn = [&] (juce::Rectangle<int> r, const juce::String& text, bool on, bool hot, juce::Colour accent, bool stopShape) {
+            auto rf = r.toFloat().reduced (0.5f);
+            g.setColour (on ? accent.withAlpha (0.35f) : hot ? theme::panelRaised : theme::panel);
+            g.fillRoundedRectangle (rf, 5.0f);
+            g.setColour (on ? accent : hot ? accent.withAlpha (0.7f) : theme::outline);
+            g.drawRoundedRectangle (rf, 5.0f, on ? 1.5f : 1.0f);
+            g.setFont (theme::font (13.0f, true));
+            const int tw = juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), text);
+            const float x0 = rf.getCentreX() - (float) (tw + 16) * 0.5f, cy = rf.getCentreY();
+            g.setColour (on ? juce::Colours::white : accent);
+            if (stopShape) g.fillRect (x0, cy - 4.5f, 9.0f, 9.0f);
+            else { juce::Path p; p.addTriangle (x0, cy - 5.5f, x0, cy + 5.5f, x0 + 9.5f, cy); g.fillPath (p); }
+            g.setColour (on ? juce::Colours::white : theme::text);
+            g.drawText (text, juce::Rectangle<float> (x0 + 16.0f, rf.getY(), (float) tw + 4.0f, rf.getHeight()), juce::Justification::centredLeft);
+        };
+        drawBtn (stopRect(), "Stop all", false, hover == -2, theme::record, true);
+        for (int i = 0; i < count; ++i)
+            drawBtn (sceneRect (i), "Scene " + juce::String (i + 1), lit == i, hover == i, theme::play, false);
+    }
+
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        const int h = stopRect().contains (e.getPosition()) ? -2 : sceneAt (e.getPosition());
+        if (h != hover) { hover = h; repaint(); }
+        setTooltip (h == -2 ? "Stop every loop" : h >= 0 ? "Scene " + juce::String (h + 1) + ": play loop " + juce::String (h + 1)
+                    + " of every track and stop all the others (right-click: MIDI learn)" : juce::String());
+    }
+    void mouseExit (const juce::MouseEvent&) override { hover = -1; repaint(); }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        const auto p = e.getPosition();
+        if (stopRect().contains (p)) {
+            if (e.mods.isPopupMenu()) { learnMenu (MappingTarget::Kind::StopAll, 0); return; }
+            grid.controller.stopAllLoops();
+            return;
+        }
+        const int i = sceneAt (p);
+        if (i < 0) return;
+        if (e.mods.isPopupMenu()) { learnMenu (MappingTarget::Kind::Scene, i); return; }
+        grid.controller.launchScene (i);
+        setLit (i);
+    }
+
+private:
+    void learnMenu (MappingTarget::Kind k, int scene)
+    {
+        auto* mm = &grid.midiMap;
+        ActionMenu am;
+        juce::PopupMenu m;
+        am.add (m, "MIDI Learn", [mm, k, scene] {
+            MappingTarget t; t.kind = k; t.loopId = (Id) scene;
+            mm->startLearn (t);
+        });
+        am.show (m, this);
+    }
+
+    LoopGrid& grid;
+    int count = 0, lit = -1, hover = -1;
+};
 
 // ---- one track row --------------------------------------------------------------------------
 class LoopGrid::Row : public juce::Component {
@@ -29,17 +110,18 @@ public:
         if (topLevel) header.onReorderDrop = [this] (const juce::MouseEvent& e) { grid.reorderDrop (trackId, e); };
 
         for (auto& l : track->loops) {
+            if (! EngineController::isSceneLoop (*l)) continue;   // automation loops are hidden for now
             auto* c = cells.add (new LoopCell (g.controller, g.selection, g.midiMap, track->id, l->id));
             c->onEdit = [this] (Id t, Id l2, bool midi) { if (grid.onEditLoop) grid.onEditLoop (t, l2, midi); };
             addAndMakeVisible (c);
         }
         plusButton.setButtonText ("+");
-        plusButton.setTooltip (isInstrument ? "Add a loop: MIDI or automation" : "Add a loop: audio or automation");
+        plusButton.setTooltip (isInstrument ? "Add a MIDI loop" : "Add an audio loop");
         plusButton.setColour (juce::TextButton::buttonColourId, theme::panel);
         plusButton.setColour (juce::TextButton::textColourOffId, theme::accent);
-        plusButton.onClick = [this] { showTypeMenu(); };
+        plusButton.onClick = [this] { addLoop(); };
         addAndMakeVisible (plusButton);
-        setSize (widthFor ((int) track->loops.size()), TrackHeader::rowHeight);
+        setSize (widthFor (cells.size()), TrackHeader::rowHeight);
     }
 
     static int widthFor (int numLoops) { return cellsX + numLoops * cellStep + plusW; }
@@ -62,6 +144,8 @@ public:
         plusButton.setBounds (x, y, plusW - 6, theme::loopCellSize);
     }
 
+    int numCells() const { return cells.size(); }
+
     void refreshAll()
     {
         header.refresh();
@@ -78,20 +162,10 @@ public:
     bool topLevel() const noexcept { return isTopLevel; }
 
 private:
-    void showTypeMenu()
+    void addLoop()
     {
-        auto* c = &grid.controller; auto* sel = &grid.selection;
-        const Id tid = trackId;
-        auto make = [c, sel, tid] (LoopType t) {
-            return [c, sel, tid, t] { const Id id = c->addLoop (tid, t); if (id != kInvalidId) sel->select (tid, id); };
-        };
-        ActionMenu am;
-        juce::PopupMenu m;
-        m.addSectionHeader ("Add loop");
-        if (isInstrument) am.add (m, "MIDI Loop", make (LoopType::Midi));
-        else am.add (m, "Audio Loop", make (LoopType::Audio));
-        am.add (m, "Automation Loop", make (LoopType::Automation));
-        am.show (m, &plusButton);
+        const Id id = grid.controller.addLoop (trackId, isInstrument ? LoopType::Midi : LoopType::Audio);
+        if (id != kInvalidId) grid.selection.select (trackId, id);
     }
 
     LoopGrid& grid;
@@ -106,6 +180,9 @@ private:
 LoopGrid::LoopGrid (EngineController& c, Selection& s, MidiMapping& mm, PresetManager& p)
     : controller (c), selection (s), midiMap (mm), presets (p)
 {
+    sceneBar = std::make_unique<SceneBar> (*this);
+    content.addAndMakeVisible (*sceneBar);
+
     viewport.setViewedComponent (&content, false);
     viewport.setScrollBarsShown (true, true);
     viewport.setScrollBarThickness (10);
@@ -169,6 +246,7 @@ void LoopGrid::timerCallback()
     ++tick;
     const bool blink = ((tick / 8) & 1) == 0;
     for (auto& r : rows) r->poll (blink);
+    if ((tick & 3) == 0) updateSceneLight();
 }
 
 void LoopGrid::rebuild()
@@ -202,9 +280,37 @@ void LoopGrid::rebuild()
     viewport.setViewPosition (viewPos);
 }
 
+void LoopGrid::updateSceneLight()
+{
+    // A scene is lit when every non-empty loop in its column is playing (or about to) and no
+    // loop outside it is.
+    const int n = sceneBar->getCount();
+    int lit = -1;
+    for (int i = 0; i < n && lit < 0; ++i) {
+        bool any = false, ok = true;
+        for (auto& t : controller.session().tracks) {
+            if (t->bounced) continue;
+            const auto loops = controller.sceneLoops (*t);
+            for (int k = 0; k < (int) loops.size() && ok; ++k) {
+                const auto st = controller.loopStatus (loops[(size_t) k]->id);
+                const bool on = (st.state == LoopState::Playing || st.state == LoopState::Overdubbing) && st.pending != PendingAction::Stop;
+                const bool starting = st.state == LoopState::Stopped && st.pending == PendingAction::Play;
+                if (k == i) { if (on || starting) any = true; else if (st.state == LoopState::Stopped) ok = false; }
+                else if (on || starting) ok = false;
+            }
+        }
+        if (any && ok) lit = i;
+    }
+    sceneBar->setLit (lit);
+}
+
 void LoopGrid::layoutContent()
 {
-    int y = pad, maxW = headerW;
+    int maxCells = 0;
+    for (auto& r : rows) maxCells = juce::jmax (maxCells, r->numCells());
+    sceneBar->setCount (maxCells);
+    sceneBar->setBounds (pad, pad, cellsX + juce::jmax (1, maxCells) * cellStep, sceneH);
+    int y = pad + sceneH + 8, maxW = headerW;
     for (auto& r : rows) {
         r->setTopLeftPosition (pad, y);
         y += rowStep;

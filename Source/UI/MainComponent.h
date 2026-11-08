@@ -104,7 +104,7 @@ private:
     int layoutCount = 0;
     int dockItemIndex[3] { -1, -1, -1 };
     bool dockVisible[3] { false, false, false };
-    int dockHeight[3] { 280, 200, 320 };
+    int dockHeight[3] { 460, 200, 320 };
 
     Page page = Page::Loops;
     std::unique_ptr<juce::FileChooser> chooser;

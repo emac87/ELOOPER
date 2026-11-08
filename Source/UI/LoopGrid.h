@@ -1,6 +1,7 @@
 #pragma once
-// The main black loop screen: one row per track (a compact header strip on the left, its loops
-// to the right, then a "+" to add a loop of the chosen type), and "+ Add Track" at the bottom.
+// The main black loop screen: a scene bar on top (Stop all + one launch button per loop column),
+// then one row per track (a slim name label, its loops, and "+" to add a loop), and "+ Add Track".
+// All mixer controls live on the mixer.
 // Multi-out instruments show their outputs and sum folder indented under them (collapsible).
 // Plain buses live on the mixer only (they appear here only if they hold loops).
 #include <JuceHeader.h>
@@ -35,6 +36,7 @@ public:
 
 private:
     class Row;
+    class SceneBar;
     struct Content : public juce::Component { void paint (juce::Graphics&) override {} };
 
     void timerCallback() override;
@@ -44,6 +46,7 @@ private:
     void rebuild();
     void layoutContent();
     void reorderDrop (Id trackId, const juce::MouseEvent&);
+    void updateSceneLight();
 
     EngineController& controller;
     Selection& selection;
@@ -54,6 +57,7 @@ private:
     Content content;
     std::vector<std::unique_ptr<Row>> rows;
     juce::TextButton addTrackButton { "+ Add Track" };
+    std::unique_ptr<SceneBar> sceneBar;
 
     bool needsRebuild = true;
     int tick = 0;

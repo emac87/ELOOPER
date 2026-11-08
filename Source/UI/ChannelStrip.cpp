@@ -1,408 +1,128 @@
 #include "UI/ChannelStrip.h"
 #include "UI/GraphicEqEditor.h"
+#include "UI/PluginBrowser.h"
+#include "UI/StripWidgets.h"
 #include "UI/Theme.h"
+#include "UI/TrackMenu.h"
 #include "Core/ParamMapping.h"
-#include <cmath>
-
-#if __has_include("UI/PluginBrowser.h")
- #include "UI/PluginBrowser.h"
-#else
-namespace el {
-void showPluginMenu (EngineController&, Id trackId, FxChain chain, int insertIndex, juce::Component* target,
-                     std::function<void (Id)> onInserted);
-}
-#endif
 
 namespace el {
 
 namespace {
-    juce::String signedDb (float db)
-    {
-        return (db > 0.05f ? "+" : "") + juce::String (db, 1) + " dB";
-    }
-    juce::String volumeText (double n)
-    {
-        const float db = pm::volumeToDb ((float) n);
-        return db <= -100.0f ? juce::String ("-inf dB") : signedDb (db);
-    }
-    juce::String panText (double n)
-    {
-        const int p = (int) std::lround (std::abs (pm::panToBipolar ((float) n)) * 50.0f);
-        return p == 0 ? juce::String ("C") : (pm::panToBipolar ((float) n) < 0 ? "L" : "R") + juce::String (p);
-    }
-    constexpr int kMargin = 4;
+    constexpr int kM = 6;            // side margin
+    constexpr int kHeaderH = 42;
+    constexpr int kButtonsY = 46, kButtonsH = 24;
+    constexpr int kTopH = 76;        // header + buttons
+    constexpr int kSlotH = 24, kSlotGap = 3;
+    const char* monitorName (MonitorMode m) { return m == MonitorMode::Auto ? "Auto" : m == MonitorMode::On ? "On" : "Off"; }
 }
 
-// ---- a slider bound to a normalised track parameter ------------------------------------------
-class StripKnob : public juce::Slider {
-public:
-    StripKnob (EngineController& c, Id track, ParamTarget t, float defaultValue,
-               std::function<juce::String (double)> fmt, juce::Slider::SliderStyle style, bool textBelow)
-        : controller (c), trackId (track), target (t)
-    {
-        setRange (0.0, 1.0, 0.0);
-        setSliderStyle (style);
-        textFromValueFunction = std::move (fmt);
-        if (textBelow)
-        {
-            setTextBoxStyle (juce::Slider::TextBoxBelow, false, 88, 18);
-            setTextBoxIsEditable (false);
-            setColour (juce::Slider::textBoxTextColourId, theme::textDim);
-            setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
-            setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-        }
-        else
-        {
-            setTextBoxStyle (juce::Slider::NoTextBox, true, 0, 0);
-            setPopupDisplayEnabled (true, true, nullptr);
-        }
-        if (style != juce::Slider::LinearVertical)
-        {
-            setScrollWheelEnabled (false);
-            setRotaryParameters (juce::MathConstants<float>::pi * 1.2f, juce::MathConstants<float>::pi * 2.8f, true);
-        }
-        setDoubleClickReturnValue (true, defaultValue);
-        setColour (juce::Slider::rotarySliderFillColourId, theme::accent);
-        setColour (juce::Slider::rotarySliderOutlineColourId, theme::outline);
-        setColour (juce::Slider::thumbColourId, theme::text);
-        setColour (juce::Slider::trackColourId, theme::accent.darker (0.2f));
-        setColour (juce::Slider::backgroundColourId, theme::panelRaised);
-        onDragStart = [this] { controller.beginParamGesture (trackId, target); };
-        onDragEnd = [this] { controller.endParamGesture (trackId, target); };
-        onValueChange = [this] { controller.setParam (trackId, target, (float) getValue()); };
-        setValue (controller.getParam (trackId, target), juce::dontSendNotification);
-    }
-
-    void refresh()
-    {
-        if (isMouseButtonDown()) return;
-        const float v = controller.getParam (trackId, target);
-        if (std::abs ((float) getValue() - v) > 1.0e-4f)
-            setValue (v, juce::dontSendNotification);
-    }
-
-private:
-    EngineController& controller;
-    Id trackId;
-    ParamTarget target;
-};
-
-// ---- the scrolling content (draws section titles) --------------------------------------------
-class StripContent : public juce::Component {
-public:
-    struct Title { juce::String text; int y; };
-    std::vector<Title> titles;
-    void paint (juce::Graphics& g) override
-    {
-        g.setColour (theme::textDim);
-        g.setFont (theme::font (13.0f, true));
-        for (auto& t : titles)
-            g.drawText (t.text, kMargin + 2, t.y, getWidth() - 2 * kMargin, 17, juce::Justification::centredLeft);
-    }
-};
-
-// ---- plugin slot row ---------------------------------------------------------------------------
-class StripSlotRow : public juce::Component {
-public:
-    StripSlotRow (ChannelStrip& s, FxChain c, int idx, PluginSlotPtr p)
-        : strip (s), chain (c), index (idx), slot (std::move (p))
-    {
-        lastBypass = slot && slot->bypassed.load();
-        setRepaintsOnMouseActivity (true);
-    }
-
-    void refresh()
-    {
-        if (slot && slot->bypassed.load() != lastBypass) { lastBypass = ! lastBypass; repaint(); }
-    }
-
-    void paint (juce::Graphics& g) override
-    {
-        auto b = getLocalBounds().toFloat();
-        g.setColour (isMouseOver() ? theme::outline : theme::panelRaised);
-        g.fillRoundedRectangle (b, 3.0f);
-        const bool hasLed = slot && chain != FxChain::Instrument;
-        auto textArea = getLocalBounds().withTrimmedLeft (5).withTrimmedRight (hasLed ? 22 : 5);
-        if (! slot)
-        {
-            g.setColour (theme::textDim);
-            g.setFont (theme::font (14.0f));
-            g.drawText ("+ Instrument", textArea, juce::Justification::centredLeft);
-            return;
-        }
-        g.setColour (slot->instance == nullptr ? theme::record : (lastBypass ? theme::textDim : theme::text));
-        g.setFont (theme::font (14.0f));
-        g.drawFittedText (slot->name(), textArea, juce::Justification::centredLeft, 1);
-        if (hasLed)
-        {
-            const auto led = ledBounds().toFloat();
-            g.setColour (lastBypass ? theme::outline : theme::play);
-            g.fillEllipse (led);
-            g.setColour (theme::background);
-            g.drawEllipse (led, 1.0f);
-        }
-    }
-
-    void mouseUp (const juce::MouseEvent& e) override
-    {
-        if (e.mouseWasDraggedSinceMouseDown()) return;
-        auto& c = strip.controller;
-        if (e.mods.isPopupMenu())
-        {
-            if (slot) strip.showSlotMenu (chain, index, slot, this);
-            return;
-        }
-        if (! slot) { strip.addPluginMenu (chain, this); return; }
-        if (chain != FxChain::Instrument && ledBounds().expanded (4).contains (e.getPosition()))
-            c.setPluginBypass (slot->id, ! slot->bypassed.load());
-        else
-            c.togglePluginEditor (slot->id);   // click again to hide the plugin window
-    }
-
-private:
-    juce::Rectangle<int> ledBounds() const { return { getWidth() - 17, (getHeight() - 11) / 2, 11, 11 }; }
-    ChannelStrip& strip;
-    FxChain chain;
-    int index;
-    PluginSlotPtr slot;
-    bool lastBypass = false;
-};
-
-// ---- send row ----------------------------------------------------------------------------------
-class StripSendRow : public juce::Component {
-public:
-    StripSendRow (ChannelStrip& s, int idx, const SendSpec& spec, juce::String bus)
-        : strip (s), index (idx), pre (spec.preFader), busName (std::move (bus)),
-          knob (s.controller, s.trackId, { ParamKind::SendLevel, spec.busId, -1 }, 0.0f,
-                [] (double n) { const float db = pm::volumeToDb ((float) n); return db <= -100.0f ? juce::String ("-inf dB") : signedDb (db); },
-                juce::Slider::RotaryVerticalDrag, false)
-    {
-        addAndMakeVisible (knob);
-        prePostButton.setClickingTogglesState (false);
-        prePostButton.setColour (juce::TextButton::buttonColourId, theme::panelRaised);
-        prePostButton.setTooltip ("Pre/post fader send");
-        updateButton();
-        prePostButton.onClick = [this]
-        {
-            pre = ! pre;
-            strip.controller.setSendPreFader (strip.trackId, index, pre);
-            updateButton();
-        };
-        addAndMakeVisible (prePostButton);
-        addMouseListener (this, true);
-    }
-    ~StripSendRow() override { removeMouseListener (this); }
-
-    void refresh() { knob.refresh(); }
-
-    void resized() override
-    {
-        auto b = getLocalBounds();
-        b.removeFromTop (20);
-        knob.setBounds (b.removeFromLeft (36).reduced (1));
-        b.removeFromLeft (4);
-        prePostButton.setBounds (b.reduced (0, 3));
-    }
-    void paint (juce::Graphics& g) override
-    {
-        g.setColour (theme::textDim);
-        g.setFont (theme::font (13.0f));
-        g.drawFittedText (busName, 2, 0, getWidth() - 4, 20, juce::Justification::centredLeft, 1);
-    }
-    void mouseUp (const juce::MouseEvent& e) override
-    {
-        if (e.mods.isPopupMenu() && ! e.mouseWasDraggedSinceMouseDown()) strip.showSendMenu (index);
-    }
-
-private:
-    void updateButton()
-    {
-        prePostButton.setButtonText (pre ? "PRE" : "POST");
-    }
-    ChannelStrip& strip;
-    int index;
-    bool pre;
-    juce::String busName;
-    StripKnob knob;
-    juce::TextButton prePostButton;
-};
-
-// ---- ChannelStrip ------------------------------------------------------------------------------
-ChannelStrip::ChannelStrip (EngineController& c, Id id)
-    : controller (c), trackId (id), isMaster (id == kMasterId)
+void ChannelStrip::Content::paint (juce::Graphics& g)
 {
-    content = std::make_unique<StripContent>();
-    viewport.setViewedComponent (content.get(), false);
-    viewport.setScrollBarsShown (false, false, true, false);
+    g.setFont (theme::font (11.0f, true));
+    g.setColour (theme::textDim);
+    for (auto& t : titles)
+        g.drawText (t.first, kM + 2, t.second, getWidth() - 2 * kM, 13, juce::Justification::centredLeft);
+}
+
+ChannelStrip::ChannelStrip (EngineController& c, PresetManager& p, Id id)
+    : controller (c), presets (p), trackId (id)
+{
+    icon = std::make_unique<PluginIconButton> (controller, trackId);
+    icon->onPressed = [this] { if (onSelect) onSelect (trackId); };
+    addAndMakeVisible (*icon);
+
+    viewport.setViewedComponent (&content, false);
+    viewport.setScrollBarsShown (true, false);
+    viewport.setScrollBarThickness (6);
     addAndMakeVisible (viewport);
 
-    nameLabel.setEditable (false, true, false);
-    nameLabel.setJustificationType (juce::Justification::centred);
-    nameLabel.setFont (theme::font (16.0f, true));
-    nameLabel.onTextChange = [this]
-    {
-        const auto n = nameLabel.getText().trim();
-        if (n.isNotEmpty()) controller.setTrackName (trackId, n);
-    };
-    addAndMakeVisible (nameLabel);
+    gainBar = std::make_unique<ValueBar>();
+    gainBar->bind (controller, trackId, { ParamKind::InputGain, kInvalidId, -1 });
+    gainBar->label = "In"; gainBar->bipolar = true; gainBar->defaultValue = 0.5f;
+    gainBar->format = [] (float v) { return stripfmt::signedDb (pm::inputGainToDb (v)); };
+    gainBar->setTooltip ("Input gain (drag; double-click resets to 0 dB)");
+    addAndMakeVisible (*gainBar);
 
-    if (! isMaster)
-        panKnob = std::make_unique<StripKnob> (controller, trackId, ParamTarget { ParamKind::Pan, kInvalidId, -1 }, 0.5f,
-                                               panText, juce::Slider::RotaryVerticalDrag, true);
-    fader = std::make_unique<StripKnob> (controller, trackId, ParamTarget { ParamKind::Volume, kInvalidId, -1 }, pm::kUnityVolume,
-                                         volumeText, juce::Slider::LinearVertical, false);
-    if (panKnob) addAndMakeVisible (*panKnob);
+    panBar = std::make_unique<ValueBar>();
+    panBar->bind (controller, trackId, { ParamKind::Pan, kInvalidId, -1 });
+    panBar->label = "Pan"; panBar->bipolar = true; panBar->defaultValue = 0.5f;
+    panBar->format = [] (float v) { return stripfmt::panText (v); };
+    panBar->setTooltip ("Pan (drag; double-click centres)");
+    addAndMakeVisible (*panBar);
+
+    fader = std::make_unique<ValueBar>();
+    fader->bind (controller, trackId, { ParamKind::Volume, kInvalidId, -1 });
+    fader->label = "Vol"; fader->vertical = true; fader->defaultValue = pm::kUnityVolume;
+    fader->format = [] (float v) { return stripfmt::signedDb (pm::volumeToDb (v)); };
+    fader->setTooltip ("Volume (drag up / down; shift = fine; double-click resets to 0 dB)");
     addAndMakeVisible (*fader);
-    dbLabel.setJustificationType (juce::Justification::centred);
-    dbLabel.setFont (theme::font (14.0f));
-    dbLabel.setColour (juce::Label::textColourId, theme::text);
-    dbLabel.setInterceptsMouseClicks (false, false);
-    addAndMakeVisible (dbLabel);
-    addAndMakeVisible (meter);
 
-    muteButton.setClickingTogglesState (true);
-    muteButton.setColour (juce::TextButton::buttonOnColourId, theme::overdub);
-    muteButton.setColour (juce::TextButton::textColourOnId, theme::background);
-    muteButton.onClick = [this]
-    {
-        const ParamTarget tgt { ParamKind::Mute, kInvalidId, -1 };
-        controller.beginParamGesture (trackId, tgt);
-        controller.setParam (trackId, tgt, muteButton.getToggleState() ? 1.0f : 0.0f);
-        controller.endParamGesture (trackId, tgt);
+    outputSlot = std::make_unique<MenuSlot>();
+    outputSlot->onClick = [this] (juce::Component* c2) {
+        if (isMaster) showHardwareOutputMenu (c2);
+        else showOutputPicker (controller, trackId, c2);
     };
-    addAndMakeVisible (muteButton);
+    addAndMakeVisible (*outputSlot);
 
-    soloButton.setClickingTogglesState (true);
-    soloButton.setColour (juce::TextButton::buttonOnColourId, theme::armed);
-    soloButton.setColour (juce::TextButton::textColourOnId, theme::background);
-    soloButton.onClick = [this]
-    {
-        if (auto t = track(); t && t->rt) t->rt->solo.store (soloButton.getToggleState());
-    };
-    addChildComponent (soloButton);
-
-    monitorButton.setTooltip ("Auto: hear the input until a loop has been recorded, then mute it so the loop and live input don't double up");
-    monitorButton.onClick = [this] { cycleMonitor(); };
-    addChildComponent (monitorButton);
-
-    outputButton.onClick = [this] { if (isMaster) showHardwareOutputMenu(); else showOutputMenu(); };
-    addAndMakeVisible (outputButton);
-
-    addMouseListener (this, true);
     rebuild();
-    refreshValues();
 }
 
 ChannelStrip::~ChannelStrip()
 {
-    removeMouseListener (this);
-    clearContent();
     viewport.setViewedComponent (nullptr, false);
-}
-
-void ChannelStrip::setSelected (bool s)
-{
-    if (selected != s) { selected = s; repaint(); }
-}
-
-void ChannelStrip::mouseDown (const juce::MouseEvent&)
-{
-    if (onSelect) onSelect (trackId);
-}
-
-void ChannelStrip::paint (juce::Graphics& g)
-{
-    auto b = getLocalBounds().toFloat();
-    g.setColour (selected ? theme::panelRaised : theme::panel);
-    g.fillRect (b);
-    g.setColour (colour);
-    g.fillRect (b.removeFromBottom (5.0f));
-    g.setColour (selected ? theme::accent : theme::outline);
-    if (selected) g.drawRect (getLocalBounds(), 2);
-    else g.drawVerticalLine (getWidth() - 1, 0.0f, (float) getHeight());
-}
-
-void ChannelStrip::resized()
-{
-    auto b = getLocalBounds().reduced (kMargin, 0);
-    b.removeFromBottom (5);
-    nameLabel.setBounds (b.removeFromTop (30).reduced (0, 2));
-    outputButton.setBounds (b.removeFromBottom (34).reduced (0, 2));
-    if (monitorButton.isVisible()) monitorButton.setBounds (b.removeFromBottom (34).reduced (0, 2));
-    auto ms = b.removeFromBottom (34).reduced (0, 2);
-    muteButton.setBounds (soloButton.isVisible() ? ms.removeFromLeft (ms.getWidth() / 2 - 2) : ms);
-    if (soloButton.isVisible()) { ms.removeFromLeft (4); soloButton.setBounds (ms); }
-
-    const int panH = panKnob ? 76 : 0;
-    const int fh = juce::jlimit (90, 230, b.getHeight() - 22 - panH - 170);
-    faderArea = b.removeFromBottom (fh);
-    dbLabel.setBounds (b.removeFromBottom (22));
-    if (panKnob) panKnob->setBounds (b.removeFromBottom (panH));
-    fader->setBounds (faderArea.removeFromLeft (40));
-    faderArea.removeFromLeft (4);
-    meter.setBounds (faderArea.removeFromLeft (28).reduced (0, 4));
-    viewport.setBounds (getLocalBounds().withTop (b.getY()).withBottom (b.getBottom()));
 }
 
 juce::String ChannelStrip::makeSignature (const TrackModel& t) const
 {
     juce::String s;
-    s << (int) t.kind << '|' << t.name << '|' << juce::String::toHexString ((int) t.colour.getARGB()) << '|' << (int) t.outputBus << '|' << t.hardwareOutput;
-    auto slotSig = [&s] (const PluginSlotPtr& p)
-    {
+    s << (int) t.kind << '|';
+    auto slotSig = [&s] (const PluginSlotPtr& p) {
         if (p) s << '[' << (int) p->id << p->name() << (p->instance != nullptr ? 1 : 0) << ']';
         else s << "[-]";
     };
-    s << "|m"; for (auto& p : t.midiFx) slotSig (p);
+    s << "m"; for (auto& p : t.midiFx) slotSig (p);
     s << "|i"; slotSig (t.instrument);
     s << "|p"; for (auto& p : t.preFx) slotSig (p);
     s << "|o"; for (auto& p : t.postFx) slotSig (p);
     s << "|s";
-    for (auto& sp : t.sends)
-    {
+    for (auto& sp : t.sends) {
         auto bus = controller.session().findTrack (sp.busId);
-        s << (int) sp.busId << (sp.preFader ? 'p' : 'q') << (bus ? bus->name : juce::String()) << ',';
+        s << (int) sp.busId << (sp.preFader ? 'p' : 'q') << (bus ? bus->name + bus->colour.toString() : juce::String()) << ',';
     }
-    if (auto out = controller.session().findTrack (t.outputBus)) s << '|' << out->name;
     return s;
 }
 
 void ChannelStrip::updateHeader (const TrackModel& t)
 {
     kind = t.kind;
+    isMaster = t.kind == TrackKind::Master;
     colour = t.colour;
-    if (! nameLabel.isBeingEdited() && nameLabel.getText() != t.name)
-        nameLabel.setText (t.name, juce::dontSendNotification);
-    nameLabel.setColour (juce::Label::backgroundColourId, t.colour);
-    nameLabel.setColour (juce::Label::textColourId, t.colour.contrasting (1.0f));
-    nameLabel.setColour (juce::Label::textWhenEditingColourId, theme::text);
-    nameLabel.setColour (juce::Label::backgroundWhenEditingColourId, theme::background);
+    nameText = t.name;
+    line1.clear();
+    if (t.kind == TrackKind::Audio)
+        line1 = t.inputChannel < 0 ? juce::String ("No input")
+              : t.stereoInput ? "In " + juce::String (t.inputChannel + 1) + "/" + juce::String (t.inputChannel + 2)
+                              : "In " + juce::String (t.inputChannel + 1);
+    else if (t.kind == TrackKind::Instrument) {
+        juce::String dev = "All MIDI";
+        if (t.midiInputDevice.isNotEmpty()) {
+            dev = t.midiInputDevice;
+            for (auto& d : juce::MidiInput::getAvailableDevices()) if (d.identifier == t.midiInputDevice) dev = d.name;
+        }
+        line1 = dev + (t.midiChannel > 0 ? " ch" + juce::String (t.midiChannel) : juce::String());
+    }
+    else if (t.kind == TrackKind::AuxOut) line1 = "Output " + juce::String (t.auxPair * 2 + 1) + "/" + juce::String (t.auxPair * 2 + 2);
+    else if (t.kind == TrackKind::Bus) line1 = t.folderOf != kInvalidId ? "Sum folder" : "Bus";
+    else line1 = "Master";
 
-    const bool showSolo = ! isMaster;
-    const bool showMonitor = ! isMaster;
-    if (soloButton.isVisible() != showSolo) soloButton.setVisible (showSolo);
-    if (monitorButton.isVisible() != showMonitor) monitorButton.setVisible (showMonitor);
-
-    if (isMaster)
-        outputButton.setButtonText ("Out " + juce::String (t.hardwareOutput + 1) + "-" + juce::String (t.hardwareOutput + 2));
-    else if (auto out = controller.session().findTrack (t.outputBus))
-        outputButton.setButtonText ("> " + out->name);
-    else
-        outputButton.setButtonText ("> Master");
-    outputButton.setTooltip (isMaster ? "Hardware output pair" : "Output destination");
-    resized();
+    if (isMaster) outputSlot->setText ("Out " + juce::String (t.hardwareOutput + 1) + "-" + juce::String (t.hardwareOutput + 2));
+    else if (auto out = controller.session().findTrack (t.outputBus); out && out->kind != TrackKind::Master) outputSlot->setText (out->name);
+    else outputSlot->setText ("Stereo Out");
+    outputSlot->setTooltip (isMaster ? "Hardware output pair" : "Output: Stereo Out (Master) or a bus");
+    gainBar->setVisible (! isMaster);
+    icon->refresh();
     repaint();
-}
-
-void ChannelStrip::clearContent()
-{
-    slotRows.clear();
-    sendRows.clear();
-    inputKnob = nullptr;
-    eqThumb = nullptr;
-    eqToggle = nullptr;
-    if (content) { content->removeAllChildren(); content->titles.clear(); }
-    owned.clear();
 }
 
 void ChannelStrip::rebuild()
@@ -411,272 +131,348 @@ void ChannelStrip::rebuild()
     if (! t) return;
     updateHeader (*t);
     const auto sig = makeSignature (*t);
-    if (sig == lastSignature) return;
-    lastSignature = sig;
-    buildContent (*t);
+    if (sig != lastSignature) { lastSignature = sig; buildContent (*t); }
+    resized();
 }
 
 void ChannelStrip::buildContent (const TrackModel& t)
 {
     const int scrollPos = viewport.getViewPositionY();
-    clearContent();
-    const int W = theme::stripWidth;
-    const int rw = W - 2 * kMargin;
+    content.removeAllChildren();
+    content.titles.clear();
+    owned.clear(); chips.clear(); sendBars.clear();
+    eqThumb = nullptr; eqToggle = nullptr;
+
+    const int rw = theme::stripWidth - 2 * kM - 6;   // leave room for the scrollbar
     int y = 2;
-
-    auto add = [this] (auto comp) { auto* raw = comp.get(); content->addAndMakeVisible (*raw); owned.push_back (std::move (comp)); return raw; };
-    auto title = [&] (const juce::String& s) { content->titles.push_back ({ s, y }); y += 18; };
-    auto addButton = [&] (const juce::String& text, std::function<void (juce::Component*)> fn)
-    {
-        auto b = std::make_unique<juce::TextButton> (text);
-        auto* raw = b.get();
-        b->setColour (juce::TextButton::buttonColourId, theme::background);
-        b->setColour (juce::TextButton::textColourOffId, theme::textDim);
-        b->onClick = [raw, fn] { fn (raw); };
-        add (std::move (b))->setBounds (kMargin, y, rw, 28);
-        y += 32;
-        return raw;
+    auto add = [this] (auto comp) { auto* raw = comp.get(); content.addAndMakeVisible (*raw); owned.push_back (std::move (comp)); return raw; };
+    auto title = [&] (const juce::String& s) { content.titles.push_back ({ s, y }); y += 14; };
+    auto chip = [&] (FxChain chain, int idx, const PluginSlotPtr& slot) {
+        auto* c = add (std::make_unique<FxChip> (controller, trackId, chain, idx, slot));
+        c->onMenu = [this] (FxChip& f) { showSlotMenu (f); };
+        c->setBounds (kM, y, rw, kSlotH);
+        chips.push_back (c);
+        y += kSlotH + kSlotGap;
     };
-    auto slotList = [&] (const juce::String& heading, FxChain chain, const std::vector<PluginSlotPtr>& list)
-    {
+    auto empty = [&] (const juce::String& hint, const juce::String& tip, std::function<void (juce::Component*)> fn) {
+        auto e = std::make_unique<EmptySlot> (hint);
+        e->setTooltip (tip);
+        e->onClick = std::move (fn);
+        add (std::move (e))->setBounds (kM, y, rw, kSlotH);
+        y += kSlotH + kSlotGap;
+    };
+    auto chain = [&] (const juce::String& heading, FxChain ch, const std::vector<PluginSlotPtr>& list, const juce::String& hint) {
         title (heading);
-        for (int i = 0; i < (int) list.size(); ++i)
-        {
-            auto* row = add (std::make_unique<StripSlotRow> (*this, chain, i, list[(size_t) i]));
-            row->setBounds (kMargin, y, rw, 28);
-            slotRows.push_back (row);
-            y += 31;
-        }
-        addButton ("+", [this, chain] (juce::Component* c) { addPluginMenu (chain, c); });
+        for (int i = 0; i < (int) list.size(); ++i) chip (ch, i, list[(size_t) i]);
+        empty (hint, "Add a plug-in here", [this, ch] (juce::Component* c) { showPluginMenu (controller, trackId, ch, -1, c); });
+        y += 3;
     };
 
-    if (t.kind == TrackKind::Audio || t.kind == TrackKind::Bus)
-    {
-        title ("INPUT");
-        inputKnob = add (std::make_unique<StripKnob> (controller, trackId, ParamTarget { ParamKind::InputGain, kInvalidId, -1 }, 0.5f,
-                                                      [] (double n) { return "In " + signedDb (pm::inputGainToDb ((float) n)); },
-                                                      juce::Slider::RotaryVerticalDrag, true));
-        inputKnob->setBounds (kMargin, y, rw, 76);
-        y += 80;
+    if (t.kind == TrackKind::Instrument) {
+        title ("Instrument");
+        if (t.instrument != nullptr) chip (FxChain::Instrument, 0, t.instrument);
+        else empty ("+ Instrument", "Choose an instrument", [this] (juce::Component* c) { showPluginMenu (controller, trackId, FxChain::Instrument, 0, c); });
+        y += 3;
+        chain ("MIDI FX", FxChain::MidiFx, t.midiFx, "+ MIDI FX");
     }
-    if (t.kind == TrackKind::Instrument)
-    {
-        title ("INSTRUMENT");
-        auto* row = add (std::make_unique<StripSlotRow> (*this, FxChain::Instrument, 0, t.instrument));
-        row->setBounds (kMargin, y, rw, 28);
-        slotRows.push_back (row);
-        y += 32;
-        slotList ("MIDI FX", FxChain::MidiFx, t.midiFx);
-    }
-    slotList ("PRE FADER", FxChain::Pre, t.preFx);
+    chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");
 
     title ("EQ");
     {
         auto thumb = std::make_unique<GraphicEqEditor> (controller, trackId, true);
         thumb->onClick = [this] { openEqEditor(); };
         eqThumb = add (std::move (thumb));
-        eqThumb->setBounds (kMargin, y, rw, 48);
-        y += 52;
-        auto tb = std::make_unique<juce::TextButton> ("EQ On");
+        eqThumb->setBounds (kM, y, rw - 40, 30);
+        auto tb = std::make_unique<juce::TextButton> ("On");
         eqToggle = tb.get();
         tb->setClickingTogglesState (true);
-        tb->setColour (juce::TextButton::buttonColourId, theme::background);
+        tb->setTooltip ("EQ on / off");
+        tb->setColour (juce::TextButton::buttonColourId, theme::panelRaised);
         tb->setColour (juce::TextButton::buttonOnColourId, theme::accent.darker (0.4f));
-        tb->onClick = [this]
-        {
-            if (auto tr = track(); tr && tr->rt) tr->rt->eqEnabled.store (eqToggle->getToggleState());
-        };
-        add (std::move (tb))->setBounds (kMargin, y, rw, 28);
-        y += 32;
+        tb->onClick = [this] { if (auto tr = track(); tr && tr->rt && eqToggle) tr->rt->eqEnabled.store (eqToggle->getToggleState()); };
+        add (std::move (tb))->setBounds (kM + rw - 36, y + 3, 36, 24);
+        y += 36;
     }
 
-    if (! isMaster)
-    {
-        title ("SENDS");
-        for (int i = 0; i < (int) t.sends.size(); ++i)
-        {
-            auto bus = controller.session().findTrack (t.sends[(size_t) i].busId);
-            auto* row = add (std::make_unique<StripSendRow> (*this, i, t.sends[(size_t) i], bus ? bus->name : juce::String ("?")));
-            row->setBounds (kMargin, y, rw, 56);
-            sendRows.push_back (row);
-            y += 60;
+    if (! isMaster) {
+        title ("Sends");
+        for (int i = 0; i < (int) t.sends.size(); ++i) {
+            const auto& sp = t.sends[(size_t) i];
+            auto bus = controller.session().findTrack (sp.busId);
+            auto bar = std::make_unique<ValueBar>();
+            bar->bind (controller, trackId, { ParamKind::SendLevel, sp.busId, -1 });
+            bar->label = (bus ? bus->name : juce::String ("?")) + (sp.preFader ? " pre" : "");
+            bar->defaultValue = 0.0f;
+            bar->fill = bus ? bus->colour : theme::accent;
+            bar->format = [] (float v) { return stripfmt::signedDb (pm::volumeToDb (v)); };
+            bar->setTooltip ("Send to " + (bus ? bus->name : juce::String ("?")) + " (drag; right-click: pre/post, remove)");
+            const int idx = i;
+            bar->onRightClick = [this, idx] (juce::Component* c) { showSendMenu (idx, c); };
+            auto* raw = add (std::move (bar));
+            raw->setBounds (kM, y, rw, kSlotH);
+            sendBars.push_back (raw);
+            y += kSlotH + kSlotGap;
         }
-        addButton ("+ Send", [this] (juce::Component* c) { showAddSendMenu (c); });
+        empty ("+ Send", "Send to a bus (or make a new one)", [this] (juce::Component* c) { showSendPicker (controller, trackId, c); });
+        y += 3;
     }
+    chain ("Post FX", FxChain::Post, t.postFx, "+ Post FX");
 
-    slotList ("POST FADER", FxChain::Post, t.postFx);
-
-    content->setSize (W, y + 4);
+    content.setSize (theme::stripWidth - 6, y + 2);
     viewport.setViewPosition (0, scrollPos);
     refreshValues();
+}
+
+void ChannelStrip::resized()
+{
+    const int W = getWidth(), H = getHeight();
+    icon->setBounds (kM, 8, 26, 26);
+    const bool full = kind == TrackKind::Audio || kind == TrackKind::Instrument;
+    const int bw = W - 2 * kM;
+    if (isMaster) {
+        muteR = { kM, kButtonsY, bw, kButtonsH };
+        soloR = armR = monR = {};
+    } else if (full) {
+        const int b = 28;
+        muteR = { kM, kButtonsY, b, kButtonsH };
+        soloR = muteR.translated (b + 3, 0);
+        armR = soloR.translated (b + 3, 0);
+        monR = { armR.getRight() + 3, kButtonsY, W - kM - armR.getRight() - 3, kButtonsH };
+    } else {
+        muteR = { kM, kButtonsY, bw / 2 - 2, kButtonsH };
+        soloR = { kM + bw / 2 + 2, kButtonsY, bw - bw / 2 - 2, kButtonsH };
+        armR = monR = {};
+    }
+
+    // Bottom: output, fader + meter, pan, In. The fader grows with the panel.
+    int bottom = H - 6;
+    outputSlot->setBounds (kM, bottom - kSlotH, bw, kSlotH);
+    bottom -= kSlotH + 6;
+    const int faderH = juce::jlimit (80, 220, (int) ((H - kTopH) * 0.36f));
+    const int meterW = 14;
+    fader->setBounds (kM, bottom - faderH, bw - meterW - 4, faderH);
+    meterR = { W - kM - meterW, bottom - faderH, meterW, faderH };
+    bottom -= faderH + 5;
+    panBar->setBounds (kM, bottom - 22, bw, 22);
+    bottom -= 22 + 4;
+    if (! isMaster) { gainBar->setBounds (kM, bottom - 22, bw, 22); bottom -= 22 + 4; }
+
+    viewport.setBounds (0, kTopH, W, juce::jmax (0, bottom - kTopH - 2));
+}
+
+ChannelStrip::Button ChannelStrip::buttonAt (juce::Point<int> p) const
+{
+    if (muteR.contains (p)) return Mute;
+    if (soloR.contains (p)) return Solo;
+    if (armR.contains (p)) return Arm;
+    if (monR.contains (p)) return Monitor;
+    return None;
+}
+
+void ChannelStrip::setSelected (bool s)
+{
+    if (s != selected) { selected = s; repaint(); }
 }
 
 void ChannelStrip::refreshValues()
 {
     auto t = track();
     if (! t || ! t->rt) return;
-    if (panKnob) panKnob->refresh();
-    fader->refresh();
-    dbLabel.setText (volumeText (fader->getValue()), juce::dontSendNotification);
-    if (inputKnob) inputKnob->refresh();
-    for (auto* r : slotRows) r->refresh();
-    for (auto* r : sendRows) r->refresh();
+    const bool m = controller.getParam (trackId, { ParamKind::Mute, kInvalidId, -1 }) > 0.5f;
+    const bool s = t->rt->solo.load(), a = t->rt->armed.load();
+    const auto mon = t->rt->monitor.load();
+    if (m != muted || s != soloed || a != armed || mon != monitor) {
+        muted = m; soloed = s; armed = a; monitor = mon;
+        repaint (0, kButtonsY - 1, getWidth(), kButtonsH + 2);
+    }
+    icon->poll();
+    gainBar->poll(); panBar->poll(); fader->poll();
+    for (auto* c : chips) c->poll();
+    for (auto* b : sendBars) b->poll();
     if (eqThumb) eqThumb->refresh();
     if (eqToggle) eqToggle->setToggleState (t->rt->eqEnabled.load(), juce::dontSendNotification);
-    muteButton.setToggleState (controller.getParam (trackId, { ParamKind::Mute, kInvalidId, -1 }) > 0.5f, juce::dontSendNotification);
-    soloButton.setToggleState (t->rt->solo.load(), juce::dontSendNotification);
-    updateMonitorText (t->rt->monitor.load());
-    const auto m = controller.meter (trackId);
-    meter.setLevels (m.left, m.right);
+    const auto ms = controller.meter (trackId);
+    const int l = juce::jlimit (0, 60, (int) (ms.left * 60.0f)), r = juce::jlimit (0, 60, (int) (ms.right * 60.0f));
+    if (l != meterL || r != meterR2) { meterL = l; meterR2 = r; repaint (meterR.expanded (1)); }
 }
 
-void ChannelStrip::updateMonitorText (MonitorMode m)
+void ChannelStrip::paint (juce::Graphics& g)
 {
-    const char* txt = m == MonitorMode::Auto ? "Monitor: Auto" : m == MonitorMode::On ? "Monitor: On" : "Monitor: Off";
-    if (monitorButton.getButtonText() != txt) monitorButton.setButtonText (txt);
-    monitorButton.setColour (juce::TextButton::buttonColourId, m == MonitorMode::On ? theme::play.darker (0.5f) : theme::panelRaised);
+    auto b = getLocalBounds().toFloat().reduced (1.5f, 1.5f);
+    g.setColour (theme::panel);
+    g.fillRoundedRectangle (b, 6.0f);
+    {
+        juce::Path p;
+        p.addRoundedRectangle (b.getX(), b.getY(), b.getWidth(), 5.0f, 6.0f, 6.0f, true, true, false, false);
+        g.setColour (colour);
+        g.fillPath (p);
+    }
+    g.setColour (selected ? juce::Colours::white : theme::outline);
+    g.drawRoundedRectangle (b, 6.0f, selected ? 1.5f : 1.0f);
+
+    const int tx = kM + 32;
+    g.setColour (theme::text);
+    g.setFont (theme::font (14.0f, true));
+    g.drawText (nameText, tx, 8, getWidth() - tx - 4, 16, juce::Justification::centredLeft, true);
+    g.setColour (theme::textDim);
+    g.setFont (theme::font (11.0f));
+    g.drawText (line1, tx, 24, getWidth() - tx - 4, 13, juce::Justification::centredLeft, true);
+
+    auto drawBtn = [&] (juce::Rectangle<int> r, const juce::String& label, bool on, juce::Colour onCol) {
+        if (r.isEmpty()) return;
+        auto rf = r.toFloat();
+        g.setColour (on ? onCol : theme::panelRaised);
+        g.fillRoundedRectangle (rf, 4.0f);
+        g.setColour (on ? onCol.brighter (0.3f) : theme::outline);
+        g.drawRoundedRectangle (rf, 4.0f, 1.0f);
+        g.setColour (on ? juce::Colours::black : theme::textDim.brighter (0.3f));
+        g.setFont (theme::font (12.5f, true));
+        g.drawText (label, r, juce::Justification::centred);
+    };
+    drawBtn (muteR, "M", muted, theme::overdub);
+    drawBtn (soloR, "S", soloed, theme::armed);
+    if (! armR.isEmpty()) {
+        drawBtn (armR, "", armed, theme::record);
+        g.setColour (armed ? juce::Colours::white : theme::record.withAlpha (0.7f));
+        const auto c = armR.toFloat().getCentre();
+        g.fillEllipse (c.x - 5.0f, c.y - 5.0f, 10.0f, 10.0f);
+        drawBtn (monR, monitorName (monitor), monitor == MonitorMode::On, theme::accent);
+    }
+
+    // vertical stereo meter beside the fader
+    auto mr = meterR.toFloat();
+    g.setColour (theme::background);
+    g.fillRoundedRectangle (mr, 2.0f);
+    const float bw = (mr.getWidth() - 1.0f) * 0.5f;
+    auto bar = [&] (float x, int v) {
+        if (v <= 0) return;
+        const float h = mr.getHeight() * (float) v / 60.0f;
+        g.setColour (v > 55 ? theme::meterHigh : v > 42 ? theme::meterMid : theme::meterLow);
+        g.fillRect (x, mr.getBottom() - h, bw, h);
+    };
+    bar (mr.getX(), meterL);
+    bar (mr.getX() + bw + 1.0f, meterR2);
 }
 
-void ChannelStrip::cycleMonitor()
+void ChannelStrip::mouseDown (const juce::MouseEvent& e)
 {
+    if (onSelect) onSelect (trackId);
+    if (e.mods.isPopupMenu()) { showTrackMenu (controller, presets, trackId, this); return; }
     auto t = track();
     if (! t || ! t->rt) return;
-    const auto cur = t->rt->monitor.load();
-    const auto next = cur == MonitorMode::Auto ? MonitorMode::On : cur == MonitorMode::On ? MonitorMode::Off : MonitorMode::Auto;
-    controller.setMonitorMode (trackId, next);
-    updateMonitorText (next);
+    switch (buttonAt (e.getPosition())) {
+        case Mute: {
+            const ParamTarget tgt { ParamKind::Mute, kInvalidId, -1 };
+            controller.beginParamGesture (trackId, tgt);
+            controller.setParam (trackId, tgt, t->rt->mute.load() ? 0.0f : 1.0f);
+            controller.endParamGesture (trackId, tgt);
+            break;
+        }
+        case Solo: t->rt->solo.store (! t->rt->solo.load()); break;
+        case Arm: controller.setArmed (trackId, ! t->rt->armed.load()); break;
+        case Monitor: {
+            const auto m = t->rt->monitor.load();
+            controller.setMonitorMode (trackId, m == MonitorMode::Auto ? MonitorMode::On : m == MonitorMode::On ? MonitorMode::Off : MonitorMode::Auto);
+            break;
+        }
+        case None: break;
+    }
+    refreshValues();
 }
 
-void ChannelStrip::alertRouting (const juce::String& msg)
+void ChannelStrip::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Routing", msg);
+    if (! isMaster && e.y < kHeaderH && e.x > kM + 30 && ! e.mods.isPopupMenu()) renameTrack (controller, trackId);
 }
 
-void ChannelStrip::addPluginMenu (FxChain chain, juce::Component* target)
-{
-    showPluginMenu (controller, trackId, chain, -1, target, {});
-}
-
-void ChannelStrip::showSlotMenu (FxChain chain, int index, PluginSlotPtr slot, juce::Component* target)
+void ChannelStrip::showSlotMenu (FxChip& f)
 {
     auto t = track();
-    if (! t || ! slot) return;
+    if (! t || ! f.getSlot()) return;
+    const auto chain = f.getChain();
+    const int index = f.getIndex();
+    const Id slotId = f.getSlot()->id;
     const int count = chain == FxChain::MidiFx ? (int) t->midiFx.size()
                     : chain == FxChain::Pre ? (int) t->preFx.size()
                     : chain == FxChain::Post ? (int) t->postFx.size() : 1;
     const bool movable = chain == FxChain::Pre || chain == FxChain::Post;
     juce::PopupMenu m;
-    m.addItem (1, "Open editor");
-    if (chain == FxChain::Instrument) m.addItem (2, "Replace...");
-    if (onPluginPresetMenu) m.addItem (3, "Presets...");
-    if (chain != FxChain::Instrument)
-    {
+    m.addSectionHeader (f.getSlot()->name());
+    m.addItem (1, controller.isPluginEditorOpen (slotId) ? "Hide window" : "Show window");
+    if (chain != FxChain::Instrument) m.addItem (8, "Bypass", true, f.getSlot()->bypassed.load());
+    m.addItem (2, "Replace...");
+    m.addItem (3, "Presets...");
+    if (chain != FxChain::Instrument) {
         m.addSeparator();
         m.addItem (4, "Move up", index > 0);
         m.addItem (5, "Move down", index < count - 1);
-        if (movable) m.addItem (6, chain == FxChain::Pre ? "Move to post-fader" : "Move to pre-fader");
+        if (movable) m.addItem (6, chain == FxChain::Pre ? "Move after the fader" : "Move before the fader");
     }
     m.addSeparator();
-    m.addItem (7, "Remove");
+    m.addItem (7, chain == FxChain::Instrument ? "No Instrument (remove)" : "No Plug-in (remove)");
 
-    juce::Component::SafePointer<ChannelStrip> safe (this);
-    juce::Component::SafePointer<juce::Component> tgt (target);
-    const Id slotId = slot->id;
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target), [safe, tgt, slotId, chain, index, t] (int r)
-    {
-        if (safe == nullptr || r == 0) return;
-        auto& c = safe->controller;
-        switch (r)
-        {
-            case 1: c.showPluginEditor (slotId); break;
-            case 2: showPluginMenu (c, safe->trackId, FxChain::Instrument, -1, tgt.getComponent(), {}); break;
-            case 3: if (safe->onPluginPresetMenu) safe->onPluginPresetMenu (slotId, tgt.getComponent()); break;
-            case 4: c.movePlugin (slotId, chain, index - 1); break;
-            case 5: c.movePlugin (slotId, chain, index + 1); break;
-            case 6:
-            {
+    juce::Component::SafePointer<juce::Component> tgt (&f);
+    auto* c = &controller; auto* pm2 = &presets; const Id tid = trackId;
+    const bool wasBypassed = f.getSlot()->bypassed.load();
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&f), [c, pm2, tgt, tid, slotId, chain, index, wasBypassed] (int r) {
+        switch (r) {
+            case 1: c->togglePluginEditor (slotId); break;
+            case 2:
+                if (chain == FxChain::Instrument) showPluginMenu (*c, tid, FxChain::Instrument, -1, tgt.getComponent());
+                else showPluginMenu (*c, tid, chain, index, tgt.getComponent(), [c, slotId] (Id) { c->removePlugin (slotId); });
+                break;
+            case 3: if (tgt != nullptr) pm2->showPluginPresetMenu (slotId, tgt.getComponent()); break;
+            case 4: c->movePlugin (slotId, chain, index - 1); break;
+            case 5: c->movePlugin (slotId, chain, index + 1); break;
+            case 6: {
+                auto tr = c->session().findTrack (tid);
+                if (tr == nullptr) break;
                 const auto other = chain == FxChain::Pre ? FxChain::Post : FxChain::Pre;
-                c.movePlugin (slotId, other, (int) (other == FxChain::Pre ? t->preFx.size() : t->postFx.size()));
+                c->movePlugin (slotId, other, (int) (other == FxChain::Pre ? tr->preFx.size() : tr->postFx.size()));
                 break;
             }
-            case 7: c.removePlugin (slotId); break;
+            case 7: c->removePlugin (slotId); break;
+            case 8: c->setPluginBypass (slotId, ! wasBypassed); break;
             default: break;
         }
     });
 }
 
-void ChannelStrip::showAddSendMenu (juce::Component* target)
+void ChannelStrip::showSendMenu (int sendIndex, juce::Component* target)
 {
     auto t = track();
-    if (! t) return;
+    if (! t || sendIndex < 0 || sendIndex >= (int) t->sends.size()) return;
+    const bool pre = t->sends[(size_t) sendIndex].preFader;
     juce::PopupMenu m;
-    int n = 0;
-    for (auto& bus : controller.session().buses())
-    {
-        if (bus->id == trackId) continue;
-        const bool used = std::any_of (t->sends.begin(), t->sends.end(), [&] (const SendSpec& s) { return s.busId == bus->id; });
-        m.addItem ((int) bus->id, bus->name, ! used);
-        ++n;
-    }
-    if (n == 0) m.addItem (-1, "No buses (add a bus first)", false);
-    juce::Component::SafePointer<ChannelStrip> safe (this);
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target), [safe] (int r)
-    {
-        if (safe == nullptr || r <= 0) return;
-        if (safe->controller.addSend (safe->trackId, (Id) r, false) < 0)
-            safe->alertRouting ("That send isn't possible: it would create a feedback loop, or the track has too many sends.");
+    m.addItem (1, "Pre-fader", true, pre);
+    m.addItem (2, "Post-fader", true, ! pre);
+    m.addSeparator();
+    m.addItem (3, "Remove send");
+    auto* c = &controller; const Id id = trackId;
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target), [c, id, sendIndex] (int r) {
+        if (r == 1) c->setSendPreFader (id, sendIndex, true);
+        else if (r == 2) c->setSendPreFader (id, sendIndex, false);
+        else if (r == 3) c->removeSend (id, sendIndex);
     });
 }
 
-void ChannelStrip::showSendMenu (int sendIndex)
-{
-    juce::PopupMenu m;
-    m.addItem (1, "Remove send");
-    juce::Component::SafePointer<ChannelStrip> safe (this);
-    m.showMenuAsync ({}, [safe, sendIndex] (int r)
-    {
-        if (safe != nullptr && r == 1) safe->controller.removeSend (safe->trackId, sendIndex);
-    });
-}
-
-void ChannelStrip::showOutputMenu()
-{
-    auto t = track();
-    if (! t) return;
-    juce::PopupMenu m;
-    m.addItem ((int) kMasterId, "Master", true, t->outputBus == kMasterId);
-    for (auto& bus : controller.session().buses())
-        if (bus->id != trackId)
-            m.addItem ((int) bus->id, bus->name, true, t->outputBus == bus->id);
-    juce::Component::SafePointer<ChannelStrip> safe (this);
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&outputButton), [safe] (int r)
-    {
-        if (safe == nullptr || r <= 0) return;
-        if (! safe->controller.setTrackOutput (safe->trackId, (Id) r))
-            safe->alertRouting ("That output would create a feedback loop.");
-    });
-}
-
-void ChannelStrip::showHardwareOutputMenu()
+void ChannelStrip::showHardwareOutputMenu (juce::Component* target)
 {
     auto t = track();
     if (! t) return;
     juce::StringArray names;
-    if (auto* dev = controller.deviceManager().getCurrentAudioDevice())
-        names = dev->getOutputChannelNames();
+    if (auto* dev = controller.deviceManager().getCurrentAudioDevice()) names = dev->getOutputChannelNames();
     juce::PopupMenu m;
     const int pairs = std::max (1, names.size() / 2);
-    for (int p = 0; p < pairs; ++p)
-    {
+    for (int p = 0; p < pairs; ++p) {
         const int first = p * 2;
         juce::String label = "Out " + juce::String (first + 1) + "-" + juce::String (first + 2);
         if (first + 1 < names.size()) label << "  (" << names[first] << " / " << names[first + 1] << ")";
         m.addItem (first + 1, label, true, t->hardwareOutput == first);
     }
-    juce::Component::SafePointer<ChannelStrip> safe (this);
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&outputButton), [safe] (int r)
-    {
-        if (safe != nullptr && r > 0) safe->controller.setMasterHardwareOutput (r - 1);
+    auto* c = &controller;
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target), [c] (int r) {
+        if (r > 0) c->setMasterHardwareOutput (r - 1);
     });
 }
 

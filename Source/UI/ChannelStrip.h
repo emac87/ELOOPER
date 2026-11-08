@@ -1,77 +1,79 @@
 #pragma once
-// One mixer channel strip (track, bus or master). Owned by MixerPanel.
+// One mixer channel strip (track, bus or master), styled like the loop page used to be: colour
+// stripe, icon + name, M / S / arm / monitor, Logic-style slots (instrument, MIDI FX, audio FX,
+// EQ, sends, post FX; click an empty slot to add), In and Pan bars, a fader with a meter, and
+// the output slot. Owned by MixerPanel.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
-#include "UI/LevelMeter.h"
+#include "Engine/PresetManager.h"
+#include <memory>
+#include <vector>
 
 namespace el {
 
 class GraphicEqEditor;
-class StripKnob;
-class StripSlotRow;
-class StripSendRow;
-class StripContent;
+class ValueBar;
+class FxChip;
+class MenuSlot;
+class PluginIconButton;
 
 class ChannelStrip : public juce::Component {
 public:
-    ChannelStrip (EngineController&, Id trackId);
+    ChannelStrip (EngineController&, PresetManager&, Id trackId);
     ~ChannelStrip() override;
 
     Id getTrackId() const noexcept { return trackId; }
-    void rebuild();            // model changed: refresh names/plugins/sends/routing (cheap if nothing changed)
-    void refreshValues();      // UI timer: parameter values, meters, LEDs
+    void rebuild();            // model changed: refresh names / plug-ins / sends / routing (cheap if unchanged)
+    void refreshValues();      // UI timer: values, meters, LEDs (repaints only on change)
     void setSelected (bool);
 
     std::function<void (Id trackId)> onSelect;
-    std::function<void (Id slotId, juce::Component*)> onPluginPresetMenu;
 
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
 
 private:
-    friend class StripSlotRow;
-    friend class StripSendRow;
-
+    enum Button { None = -1, Mute, Solo, Arm, Monitor };
+    Button buttonAt (juce::Point<int>) const;
     TrackPtr track() const { return controller.session().findTrack (trackId); }
     juce::String makeSignature (const TrackModel&) const;
     void updateHeader (const TrackModel&);
     void buildContent (const TrackModel&);
-    void clearContent();
-    void addPluginMenu (FxChain chain, juce::Component* target);
-    void showSlotMenu (FxChain chain, int index, PluginSlotPtr slot, juce::Component* target);
-    void showAddSendMenu (juce::Component* target);
-    void showSendMenu (int sendIndex);
-    void showOutputMenu();
-    void showHardwareOutputMenu();
+    void showSlotMenu (FxChip&);
+    void showSendMenu (int sendIndex, juce::Component*);
+    void showHardwareOutputMenu (juce::Component*);
     void openEqEditor();
-    void cycleMonitor();
-    void updateMonitorText (MonitorMode);
-    void alertRouting (const juce::String& msg);
+
+    struct Content : public juce::Component {
+        std::vector<std::pair<juce::String, int>> titles;   // section label + y
+        void paint (juce::Graphics&) override;
+    };
 
     EngineController& controller;
+    PresetManager& presets;
     const Id trackId;
-    bool selected = false;
-    bool isMaster = false;
+    bool selected = false, isMaster = false;
     TrackKind kind = TrackKind::Audio;
     juce::Colour colour { 0xff4fc3f7 };
-    juce::String lastSignature;
+    juce::String nameText, line1, lastSignature;
 
-    juce::Label nameLabel;
+    juce::Rectangle<int> muteR, soloR, armR, monR, meterR;
+    bool muted = false, soloed = false, armed = false;
+    MonitorMode monitor = MonitorMode::Auto;
+    int meterL = 0, meterR2 = 0;
+
+    std::unique_ptr<PluginIconButton> icon;
     juce::Viewport viewport;
-    std::unique_ptr<StripContent> content;
+    Content content;
     std::vector<std::unique_ptr<juce::Component>> owned;   // children of `content`
-    std::vector<StripSlotRow*> slotRows;
-    std::vector<StripSendRow*> sendRows;
-    StripKnob* inputKnob = nullptr;
+    std::vector<FxChip*> chips;
+    std::vector<ValueBar*> sendBars;
     GraphicEqEditor* eqThumb = nullptr;
     juce::TextButton* eqToggle = nullptr;
-
-    std::unique_ptr<StripKnob> panKnob, fader;
-    juce::Label dbLabel;
-    LevelMeter meter;
-    juce::TextButton muteButton { "M" }, soloButton { "S" }, monitorButton, outputButton;
-    juce::Rectangle<int> faderArea;
+    std::unique_ptr<ValueBar> gainBar, panBar, fader;
+    std::unique_ptr<MenuSlot> outputSlot;
 };
 
 } // namespace el

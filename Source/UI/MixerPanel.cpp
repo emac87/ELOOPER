@@ -3,7 +3,7 @@
 
 namespace el {
 
-MixerPanel::MixerPanel (EngineController& c, Selection& s) : controller (c), selection (s)
+MixerPanel::MixerPanel (EngineController& c, Selection& s, PresetManager& p) : controller (c), selection (s), presets (p)
 {
     viewport.setViewedComponent (&stripHolder, false);
     viewport.setScrollBarsShown (false, true);
@@ -32,24 +32,28 @@ void MixerPanel::sessionChanged (Change what, Id)
 
 std::unique_ptr<ChannelStrip> MixerPanel::makeStrip (Id trackId)
 {
-    auto strip = std::make_unique<ChannelStrip> (controller, trackId);
+    auto strip = std::make_unique<ChannelStrip> (controller, presets, trackId);
     strip->onSelect = [this] (Id id) { selection.select (id); };
-    strip->onPluginPresetMenu = [this] (Id slotId, juce::Component* c)
-    {
-        if (onPluginPresetMenu) onPluginPresetMenu (slotId, c);
-    };
     return strip;
 }
 
 void MixerPanel::rebuild()
 {
+    // Same order as the loop page: each track, a multi-out instrument's outputs and its sum
+    // folder right after it, then the plain buses.
     std::vector<Id> order;
     const auto& tracks = controller.session().tracks;
+    auto has = [&order] (Id id) { return std::find (order.begin(), order.end(), id) != order.end(); };
+    for (auto& t : tracks) {
+        if (t->bounced || ! (t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument || t->kind == TrackKind::AuxOut)) continue;
+        if (t->kind == TrackKind::AuxOut && controller.session().findTrack (t->auxParent) != nullptr) continue;
+        order.push_back (t->id);
+        if (t->kind != TrackKind::Instrument) continue;
+        for (auto& o : tracks) if (! o->bounced && o->kind == TrackKind::AuxOut && o->auxParent == t->id) order.push_back (o->id);
+        if (auto f = controller.folderBusOf (t->id); f && ! f->bounced) order.push_back (f->id);
+    }
     for (auto& t : tracks)
-        if (! t->bounced && (t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument || t->kind == TrackKind::AuxOut))
-            order.push_back (t->id);
-    for (auto& t : tracks)
-        if (! t->bounced && t->kind == TrackKind::Bus)
+        if (! t->bounced && t->kind == TrackKind::Bus && ! has (t->id))
             order.push_back (t->id);
 
     std::vector<std::unique_ptr<ChannelStrip>> next;
@@ -87,7 +91,7 @@ void MixerPanel::resized()
 {
     auto b = getLocalBounds();
     b.removeFromTop (1);
-    if (masterStrip) masterStrip->setBounds (b.removeFromRight (theme::stripWidth));
+    if (masterStrip) masterStrip->setBounds (b.removeFromRight (theme::stripWidth).reduced (0, 2));
     viewport.setBounds (b);
     layoutStrips();
 }
@@ -98,7 +102,7 @@ void MixerPanel::layoutStrips()
     const int w = std::max ((int) strips.size() * theme::stripWidth, viewport.getWidth());
     stripHolder.setSize (w, h);
     int x = 0;
-    for (auto& s : strips) { s->setBounds (x, 0, theme::stripWidth, h); x += theme::stripWidth; }
+    for (auto& s : strips) { s->setBounds (x, 2, theme::stripWidth - 2, h - 2); x += theme::stripWidth; }
 }
 
 void MixerPanel::timerCallback()

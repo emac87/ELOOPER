@@ -156,6 +156,14 @@ public:
     void selectTake (Id loopId, int take);
     void deleteTake (Id loopId, int take);
     void stopAllLoops();
+
+    // Scenes (Ableton-style): scene N is the N-th loop of every track (automation loops are not
+    // counted). Launching it plays those loops and stops every other loop, each quantised by its
+    // own settings. Empty slots stay empty, and loops that are recording are left alone.
+    static bool isSceneLoop (const LoopModel& l) noexcept { return l.type != LoopType::Automation; }
+    std::vector<LoopPtr> sceneLoops (const TrackModel&) const;
+    int numScenes() const;
+    void launchScene (int index);
     void duplicateLoop (Id loopId);                  // MIDI/automation: copy content to a new loop
 
     LoopStatus loopStatus (Id loopId) const;         // cheap; call from timers

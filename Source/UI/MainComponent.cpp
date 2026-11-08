@@ -39,13 +39,10 @@ MainComponent::MainComponent (EngineController& c, MidiMapping& mm, PresetManage
     }
 
     timeline = std::make_unique<TimelineView> (controller, selection);
-    mixer = std::make_unique<MixerPanel> (controller, selection);
+    mixer = std::make_unique<MixerPanel> (controller, selection, presets);
     automation = std::make_unique<AutomationPanel> (controller, selection);
     editor = std::make_unique<MidiEditor> (controller, selection);
 
-    mixer->onPluginPresetMenu = [this] (Id slotId, juce::Component* target) {
-        presets.showPluginPresetMenu (slotId, target);
-    };
     midiMap.selectedLoopProvider = [this] { return selection.loopId; };
 
     addAndMakeVisible (transport);

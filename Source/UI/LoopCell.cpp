@@ -316,7 +316,7 @@ void LoopCell::showMenu()
     });
     if (lt == LoopType::Midi)
         am.add (m, "Edit MIDI", [self, tid, id] { if (self != nullptr && self->onEdit) self->onEdit (tid, id, true); });
-    am.add (m, "Edit Automation", [self, tid, id] { if (self != nullptr && self->onEdit) self->onEdit (tid, id, false); });
+    // (Loop automation is hidden for now: it will come back in a different form.)
 
     juce::PopupMenu learn;
     auto learnItem = [&] (const char* name, MappingTarget::Kind k) {
