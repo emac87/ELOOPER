@@ -21,6 +21,7 @@ public:
     bool isInteracting() const noexcept { return mode != Mode::None; }
 
     void paint (juce::Graphics&) override;
+    void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
@@ -42,6 +43,12 @@ private:
     double eraseFrom = 0;
     double playBeat = 0;
     bool playVisible = false;
+    juce::Path curvePath, curveFill;   // cached; rebuilt only when pathDirty
+    bool pathDirty = true;
+    void rebuildPath();
+    void invalidateCurve() { pathDirty = true; repaint(); }
+    int playheadX() const noexcept;
+    void repaintPlayheadAt (int x);
 
     Mode mode = Mode::None;
     int dragIndex = -1;

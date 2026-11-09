@@ -27,7 +27,8 @@ public:
     void saveKnownList();
 
     // Sorted, filtered views for menus.
-    std::vector<juce::PluginDescription> instruments() const;
+    std::vector<juce::PluginDescription> instruments() const;   // built-in Chimera first
+    static bool isBuiltIn (const juce::PluginDescription&);
     std::vector<juce::PluginDescription> effects() const;      // audio effects
     std::vector<juce::PluginDescription> midiEffects() const;
 

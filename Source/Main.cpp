@@ -50,7 +50,17 @@ public:
         controller.reset();
     }
 
-    void systemRequestedQuit() override { quit(); }
+    // Cmd-Q, the window's close button and OS shutdown all land here: ask about unsaved work first.
+    void systemRequestedQuit() override
+    {
+        if (window != nullptr)
+            if (auto* mc = dynamic_cast<el::MainComponent*> (window->getContentComponent()))
+            {
+                mc->runIfSafeToDiscard ([] { juce::JUCEApplication::quit(); });
+                return;
+            }
+        quit();
+    }
 
 private:
     static bool isScanChild() { return getCommandLineParameterArray().contains ("--elooper-scan"); }
@@ -82,6 +92,9 @@ private:
     bool nothingToLose() const
     {
         if (controller == nullptr) return true;
+        if (window != nullptr)
+            if (auto* mc = dynamic_cast<el::MainComponent*> (window->getContentComponent()))
+                if (mc->isDirty()) return false;   // unsaved changes: never restart for an update silently
         for (auto& t : controller->session().tracks) {
             if (! t->allPlugins().empty()) return false;
             for (auto& l : t->loops)

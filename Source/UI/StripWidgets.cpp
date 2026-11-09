@@ -23,6 +23,13 @@ namespace stripfmt {
 // ---- ValueBar ---------------------------------------------------------------------------------
 ValueBar::ValueBar() : fill (theme::accent) {}
 
+ValueBar::~ValueBar()
+{
+    // If the strip rebuilds while this bar is being dragged, close the gesture so the parameter
+    // isn't left "touched" (automation would ignore it and keep recording it forever).
+    if (dragging && onEnd) onEnd();
+}
+
 void ValueBar::bind (EngineController& c, Id trackId, ParamTarget tgt)
 {
     auto* ctl = &c;

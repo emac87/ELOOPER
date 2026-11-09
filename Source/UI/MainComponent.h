@@ -23,7 +23,8 @@ class MainComponent : public juce::Component,
                       public juce::MenuBarModel,
                       public juce::ApplicationCommandTarget,
                       private EngineController::Listener,
-                      private juce::ChangeListener {
+                      private juce::ChangeListener,
+                      private juce::Timer {
 public:
     MainComponent (EngineController&, MidiMapping&, PresetManager&);
     ~MainComponent() override;
@@ -43,6 +44,12 @@ public:
     void getCommandInfo (juce::CommandID, juce::ApplicationCommandInfo&) override;
     bool perform (const InvocationInfo&) override;
 
+    // Unsaved-work guard: runs `proceed` at once if the session is clean, otherwise asks
+    // Save / Don't Save / Cancel first (async). `proceed` runs only if the user did not cancel
+    // (and, for Save, only if the save succeeded).
+    void runIfSafeToDiscard (std::function<void()> proceed);
+    bool isDirty() const noexcept { return dirty; }
+
     // Set by Main.cpp: runs an interactive update check ("Check for Updates...").
     std::function<void()> onCheckForUpdates;
 
@@ -54,6 +61,7 @@ private:
 
     void sessionChanged (Change what, Id id) override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void timerCallback() override;   // autosave
 
     void setPage (Page);
     void setDock (Dock, bool visible);
@@ -65,9 +73,16 @@ private:
 
     void newSession();
     void openProject();
-    void saveProject();
-    void saveProjectAs();
-    void writeProject (const juce::File& folder);
+    void openAutosave();
+    void openProjectFrom (const juce::File& startDir, bool isAutosave);
+    void loadProjectFolder (const juce::File& folder, bool isAutosave);
+    void saveProject (std::function<void (bool)> done = {});
+    void saveProjectAs (std::function<void (bool)> done = {});
+    bool writeProject (const juce::File& folder);
+    void setDirty (bool);
+    void autosaveNow();
+    static juce::File autosaveDir();
+    bool sceneKeysBlocked() const;
     void updateTitle();
     void clearSelectedLoop();
     void bounceSelectedTrack();
@@ -105,6 +120,11 @@ private:
     int dockItemIndex[3] { -1, -1, -1 };
     bool dockVisible[3] { false, false, false };
     int dockHeight[3] { 460, 200, 320 };
+
+    bool dirty = false;
+    bool askingUnsaved = false;      // an unsaved-changes prompt is already on screen
+    uint32_t changeCount = 0;        // bumped on every dirtying change
+    uint32_t autosavedAt = 0;        // changeCount at the last autosave
 
     Page page = Page::Loops;
     std::unique_ptr<juce::FileChooser> chooser;

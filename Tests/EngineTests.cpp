@@ -3,6 +3,8 @@
 #include "Engine/EngineController.h"
 #include "Engine/AudioEngine.h"
 #include "Engine/SessionSerializer.h"
+#include "Engine/PluginHost.h"
+#include "Synth/plugin/ChimeraProcessor.h"
 #include <cstdio>
 #include <vector>
 
@@ -348,6 +350,57 @@ static void testAutomationWrite() {
     c.setAutomationWriteLoop (kInvalidId);
 }
 
+// Chimera as a hosted instrument: plays MIDI, every factory preset makes sound and stays sane,
+// state round-trips through get/setStateInformation, multi-out buses can be enabled.
+static void testChimeraProcessor() {
+    std::printf ("chimera processor\n");
+    using namespace el::chimera;
+    auto proc = std::make_unique<ChimeraProcessor>();
+    CHECK (PluginHost::isBuiltIn (proc->getPluginDescription()));
+    CHECK (PluginHost::enableMultiOut (*proc) == 8);
+    proc->prepareToPlay (48000.0, 256);
+    juce::AudioBuffer<float> buf (8, 256);
+    auto renderRms = [&] (bool noteOn, int blocks) {
+        double sum = 0; long n = 0;
+        for (int b = 0; b < blocks; ++b) {
+            juce::MidiBuffer midi;
+            if (noteOn && b == 0) { midi.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0); midi.addEvent (juce::MidiMessage::noteOn (1, 64, (juce::uint8) 90), 0); }
+            buf.clear();
+            proc->processBlock (buf, midi);
+            for (int i = 0; i < 256; ++i) { const double v = buf.getSample (0, i); sum += v * v; ++n; }
+        }
+        return std::sqrt (sum / std::max (1L, n));
+    };
+    for (int i = 0; i < ChimeraProcessor::numFactoryPresets(); ++i) {
+        proc->loadFactoryPreset (i);
+        renderRms (false, 2);   // let the patch arrive
+        const double rms = renderRms (true, 60);
+        const bool isSampler = proc->patch().layers[0].engine == Engine::Sampler;   // no sample loaded: silent
+        if (! isSampler && ! (rms > 0.001)) std::printf ("    preset %s rms %f\n", ChimeraProcessor::factoryPresetName (i).toRawUTF8(), rms);
+        CHECK (isSampler || rms > 0.001);
+        CHECK (rms < 2.0 && std::isfinite (rms));
+        juce::MidiBuffer off; off.addEvent (juce::MidiMessage::allNotesOff (1), 0);
+        buf.clear(); proc->processBlock (buf, off);
+        renderRms (false, 400);
+    }
+    // state round trip
+    proc->loadFactoryPreset (3);
+    proc->editPatch ([] (Patch& p) { p.layers[1].engine = Engine::Wavetable; p.layers[1].wtTable = 4; p.layers[1].mods[2] = { ModSrc::Lfo2, ModDst::Pan, -0.5f }; p.reverb.size = 0.33f; });
+    proc->macroParam (2)->setValueNotifyingHost (0.4f);
+    juce::MemoryBlock state;
+    proc->getStateInformation (state);
+    auto other = std::make_unique<ChimeraProcessor>();
+    other->setStateInformation (state.getData(), (int) state.getSize());
+    const auto& a = proc->patch(); const auto& b = other->patch();
+    CHECK (a.name == b.name);
+    CHECK (b.layers[1].engine == Engine::Wavetable && b.layers[1].wtTable == 4);
+    CHECK (b.layers[1].mods[2].src == ModSrc::Lfo2 && b.layers[1].mods[2].dst == ModDst::Pan && std::abs (b.layers[1].mods[2].amount + 0.5f) < 1e-4f);
+    CHECK (std::abs (b.reverb.size - 0.33f) < 1e-4f);
+    CHECK (std::abs (a.layers[0].cutoff - b.layers[0].cutoff) < 0.5f);
+    CHECK (std::abs (other->macroParam (2)->get() - 0.4f) < 1e-3f);
+    CHECK (std::memcmp (dx7ToVced (a.layers[0].fm).data(), dx7ToVced (b.layers[0].fm).data(), 155) == 0);
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     testRecordLoopAndAutoMute();
@@ -359,6 +412,7 @@ int main() {
     testMultiOutSumFolder();
     testScenes();
     testAutomationWrite();
+    testChimeraProcessor();
     std::printf (failures == 0 ? "engine tests passed\n" : "%d engine check(s) FAILED\n", failures);
     return failures == 0 ? 0 : 1;
 }

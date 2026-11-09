@@ -24,6 +24,7 @@ public:
     juce::Colour fill;
 
     ValueBar();
+    ~ValueBar() override;   // ends a drag gesture that's still open (the bar was rebuilt mid-drag)
     // Binds get/set/gesture to a track parameter.
     void bind (EngineController&, Id trackId, ParamTarget);
     void poll();

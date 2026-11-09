@@ -6,7 +6,7 @@
 namespace el {
 
 namespace {
-constexpr int kRowHeight = 96, kHeaderWidth = 190, kTopBar = 44;
+constexpr int kRowHeight = 96, kHeaderWidth = 190, kTopBar = 44, kEmptyHeight = 84;
 
 juce::String formatValue (const ParamTarget& t, float v)
 {
@@ -47,12 +47,11 @@ public:
         nameLabel.setMinimumHorizontalScale (0.7f);
         valueLabel.setFont (theme::font (14.0f));
         valueLabel.setColour (juce::Label::textColourId, theme::textDim);
-        enable.setButtonText ("On");
+        enable.setTooltip ("Lane on / off: when off the lane is kept but not applied");
         enable.onClick = [this] { modify ([this] (AutomationLane& l) { l.enabled = enable.getToggleState(); }); };
-        clear.setButtonText ("Clear");
+        clear.setTooltip ("Delete every point in this lane");
         clear.onClick = [this] { modify ([] (AutomationLane& l) { l.points.clear(); }); };
-        remove.setButtonText ("X");
-        remove.setTooltip ("Remove lane");
+        remove.setTooltip ("Remove this lane");
         remove.onClick = [this] { panel.removeLane (index); };
         for (auto* c2 : { (juce::Component*) &nameLabel, (juce::Component*) &valueLabel, (juce::Component*) &enable,
                           (juce::Component*) &clear, (juce::Component*) &remove, (juce::Component*) &view })
@@ -76,9 +75,9 @@ public:
         valueLabel.setBounds (h.removeFromTop (20));
         h.removeFromTop (4);
         auto row = h.removeFromTop (32);
-        enable.setBounds (row.removeFromLeft (52));
+        enable.setBounds (row.removeFromLeft (44));
         row.removeFromLeft (4);
-        remove.setBounds (row.removeFromRight (36));
+        remove.setBounds (row.removeFromRight (30));
         row.removeFromRight (4);
         clear.setBounds (row);
         view.setBounds (getLocalBounds().withTrimmedLeft (kHeaderWidth));
@@ -110,8 +109,7 @@ private:
     AutomationOwner owner;
     int index;
     juce::Label nameLabel, valueLabel;
-    juce::ToggleButton enable;
-    juce::TextButton clear, remove;
+    Chip enable { "On", Chip::Kind::Toggle, theme::play }, clear { "Clear" }, remove { "", Chip::Kind::Remove };
     AutomationLaneView view;
 
     template <typename Fn> void modify (Fn fn)
@@ -127,6 +125,7 @@ private:
 class AutomationPanel::Container : public juce::Component {
 public:
     std::vector<std::unique_ptr<LaneRow>> rows;
+    Container() { setInterceptsMouseClicks (false, true); }
     void layoutRows (int width)
     {
         for (size_t i = 0; i < rows.size(); ++i)
@@ -147,20 +146,21 @@ AutomationPanel::AutomationPanel (EngineController& c, Selection& s) : controlle
         b->setClickingTogglesState (false);
         addChildComponent (*b);
     }
+    loopLayerButton.setTooltip ("Edit the selected loop's own automation layer");
+    trackLanesButton.setTooltip ("Edit the track's timeline automation lanes");
     loopLayerButton.onClick = [this] { useTrackLanes = false; dirty = true; ticksSinceRefresh = 100; refresh(); };
     trackLanesButton.onClick = [this] { useTrackLanes = true; dirty = true; ticksSinceRefresh = 100; refresh(); };
     setOpaque (false);
     viewport.setOpaque (false);
+    viewport.setInterceptsMouseClicks (false, true);
     pencilButton.setTooltip ("Pencil: drag to draw points freehand");
     pencilButton.onClick = [this] { if (pencilButton.getToggleState()) eraserButton.setToggleState (false, juce::dontSendNotification); dirty = true; };
     addAndMakeVisible (pencilButton);
     eraserButton.setTooltip ("Eraser: drag across a lane to remove its points");
     eraserButton.onClick = [this] { if (eraserButton.getToggleState()) pencilButton.setToggleState (false, juce::dontSendNotification); dirty = true; };
     addAndMakeVisible (eraserButton);
-    writeButton.setClickingTogglesState (true);
     writeButton.setTooltip ("Write (record arm): while on, moving any control on this loop's channel writes it into the "
                             "loop's automation as the loop plays. (Recording or overdubbing a loop always writes.)");
-    writeButton.setColour (juce::TextButton::buttonOnColourId, theme::record);
     writeButton.onClick = [this] {
         controller.setAutomationWriteLoop (writeButton.getToggleState() && owner.loopId != kInvalidId ? owner.loopId : kInvalidId);
     };
@@ -196,15 +196,21 @@ void AutomationPanel::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     dirty = true;
     ticksSinceRefresh = 100;
-    refresh();
+    if (isShowing()) refresh();
+}
+
+void AutomationPanel::visibilityChanged()
+{
+    if (isVisible()) { dirty = true; ticksSinceRefresh = 100; }
 }
 
 void AutomationPanel::timerCallback()
 {
+    if (! isShowing()) return;                          // hidden: do nothing, catch up when shown again
     ++ticksSinceRefresh;
     if (dirty && ticksSinceRefresh >= 3) refresh();     // at most ~10 refreshes per second
 
-    if (! ownerValid || ! isShowing()) return;
+    if (! ownerValid) return;
     bool vis = false; double beat = 0;
     if (owner.loopId != kInvalidId)
     {
@@ -249,8 +255,8 @@ void AutomationPanel::resolveOwner()
     writeButton.setEnabled (owner.loopId != kInvalidId);
     loopLayerButton.setVisible (showToggle);
     trackLanesButton.setVisible (showToggle);
-    loopLayerButton.setColour (juce::TextButton::buttonColourId, ! useTrackLanes ? theme::accent.darker (0.4f) : theme::panelRaised);
-    trackLanesButton.setColour (juce::TextButton::buttonColourId, useTrackLanes ? theme::accent.darker (0.4f) : theme::panelRaised);
+    loopLayerButton.setToggleState (! useTrackLanes, juce::dontSendNotification);
+    trackLanesButton.setToggleState (useTrackLanes, juce::dontSendNotification);
 }
 
 double AutomationPanel::laneLength() const
@@ -312,23 +318,37 @@ void AutomationPanel::layoutRows()
     container->layoutRows (std::max (100, viewport.getMaximumVisibleWidth()));
 }
 
+int AutomationPanel::contentHeight() const
+{
+    if (container->rows.empty()) return kEmptyHeight;
+    return std::max (0, std::min (viewport.getHeight(), container->getHeight() - viewport.getViewPositionY()));
+}
+
+bool AutomationPanel::hitTest (int x, int y)
+{
+    if (x < 0 || x >= getWidth() || y < 0) return false;
+    return y < kTopBar + contentHeight();
+}
+
 void AutomationPanel::resized()
 {
     auto b = getLocalBounds();
     auto top = b.removeFromTop (kTopBar).reduced (4, 4);
     closeButton.setBounds (top.removeFromRight (70));
     top.removeFromRight (10);
-    addLaneButton.setBounds (top.removeFromRight (90));
-    top.removeFromRight (6);
-    writeButton.setBounds (top.removeFromRight (70));
-    top.removeFromRight (6);
-    eraserButton.setBounds (top.removeFromRight (86));
-    pencilButton.setBounds (top.removeFromRight (82));
-    top.removeFromRight (6);
+    addLaneButton.setBounds (top.removeFromRight (74));
+    top.removeFromRight (10);
+    writeButton.setBounds (top.removeFromRight (62));
+    top.removeFromRight (4);
+    eraserButton.setBounds (top.removeFromRight (62));
+    top.removeFromRight (4);
+    pencilButton.setBounds (top.removeFromRight (62));
+    top.removeFromRight (10);
     if (trackLanesButton.isVisible())
     {
-        trackLanesButton.setBounds (top.removeFromRight (110));
-        loopLayerButton.setBounds (top.removeFromRight (110));
+        trackLanesButton.setBounds (top.removeFromRight (96));
+        top.removeFromRight (2);
+        loopLayerButton.setBounds (top.removeFromRight (86));
     }
     viewport.setBounds (b);
     layoutRows();
@@ -336,8 +356,7 @@ void AutomationPanel::resized()
 
 void AutomationPanel::paint (juce::Graphics& g)
 {
-    // See-through layer: the page underneath stays visible.
-    g.fillAll (theme::background.withAlpha (0.6f));
+    // See-through layer: only the top bar (and the empty-state card) are drawn; the page underneath stays usable.
     g.setColour (theme::panel.withAlpha (0.95f));
     g.fillRect (0, 0, getWidth(), kTopBar);
     g.setColour (theme::outline);
@@ -353,12 +372,14 @@ void AutomationPanel::paint (juce::Graphics& g)
 
     if (container->rows.empty())
     {
+        g.setColour (theme::background.withAlpha (0.85f));
+        g.fillRect (0, kTopBar, getWidth(), kEmptyHeight);
         g.setColour (theme::textDim);
         g.setFont (theme::font (15.0f));
         g.drawFittedText (ownerValid
             ? "No lanes yet. Click + Lane to add one and draw it, or turn on Write and move a control on this loop's channel while the loop plays (recording or overdubbing a loop always writes)."
             : "Select a track or a loop to edit its automation.",
-            getLocalBounds().withTrimmedTop (kTopBar).reduced (24, 8), juce::Justification::centred, 3);
+            juce::Rectangle<int> (0, kTopBar, getWidth(), kEmptyHeight).reduced (24, 8), juce::Justification::centred, 3);
     }
 }
 

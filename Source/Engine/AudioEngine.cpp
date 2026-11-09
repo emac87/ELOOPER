@@ -189,6 +189,7 @@ void AudioEngine::render (const float* const* in, int numIn, float* const* out, 
         const double sr = currentRate.load (std::memory_order_relaxed);
         BlockTime t = link.beginBlock (sampleClock, n, sr, latOut.load (std::memory_order_relaxed),
                                        ts->beatsPerBar, (double) ts->masterBars * ts->beatsPerBar);
+        playHeadForPlugins.t = t;
 
         // Transport edges.
         if (t.playing && ! wasPlaying) {
@@ -197,7 +198,7 @@ void AudioEngine::render (const float* const* in, int numIn, float* const* out, 
         } else if (! t.playing && wasPlaying) {
             for (auto& node : g->nodes)
                 for (auto* l : node.loops) l->transportStopped (loopCtx, nullptr);
-            for (auto& node : g->nodes) { node.midiGateOpen = false; }   // forces note-offs below
+            for (auto& node : g->nodes) node.flushNotes = true;   // MIDI loops' held notes: note-offs below
             EngineEvent e; e.type = EngineEventType::TransportStopped; events.push (e);
         }
         wasPlaying = t.playing;
@@ -496,6 +497,15 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
             for (int ch = 1; ch <= 16; ++ch) n.midi.addEvent (juce::MidiMessage::allNotesOff (ch), 0);   // gate closed: no hanging notes
         }
         n.midiGateOpen = monitor;
+        if (n.flushNotes) {
+            // The transport stopped: MIDI loops dropped their held notes, so silence every
+            // channel of this instrument (and lift the sustain pedal) whether or not it monitors.
+            n.flushNotes = false;
+            for (int ch = 1; ch <= 16; ++ch) {
+                n.midi.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), 0);
+                n.midi.addEvent (juce::MidiMessage::allNotesOff (ch), 0);
+            }
+        }
 
         runPlugins (n.midiFx, n.work, n.midi, ns);
         if (n.hasInstrument && n.instrument.proc != nullptr && ! n.instrument.slot->bypassed.load (std::memory_order_relaxed)) {

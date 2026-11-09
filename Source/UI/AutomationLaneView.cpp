@@ -15,15 +15,16 @@ AutomationLaneView::AutomationLaneView (EngineController& c, AutomationOwner o, 
 void AutomationLaneView::setLane (const AutomationLane& l)
 {
     if (isInteracting()) return;
+    // Keep the point selection across model refreshes unless the point count changed.
+    if (l.points.size() != lane.points.size()) selected.clear();
     lane = l;
-    selected.clear();
-    repaint();
+    invalidateCurve();
 }
 
 void AutomationLaneView::setLengthBeats (double b)
 {
     b = std::max (1.0, b);
-    if (std::abs (b - lengthBeats) > 1.0e-9) { lengthBeats = b; repaint(); }
+    if (std::abs (b - lengthBeats) > 1.0e-9) { lengthBeats = b; invalidateCurve(); }
 }
 
 void AutomationLaneView::setBeatsPerBar (int bpb)
@@ -34,9 +35,42 @@ void AutomationLaneView::setBeatsPerBar (int bpb)
 
 void AutomationLaneView::setPlayhead (double beat, bool visible)
 {
-    const bool changed = visible != playVisible || (visible && std::abs (beatToX (beat) - beatToX (playBeat)) >= 1.0f);
+    const int oldX = playheadX();
+    const bool oldVisible = playVisible;
     playBeat = beat; playVisible = visible;
-    if (changed) repaint();
+    const int newX = playheadX();
+    if (oldVisible && (! visible || newX != oldX)) repaintPlayheadAt (oldX);
+    if (visible && (! oldVisible || newX != oldX)) repaintPlayheadAt (newX);
+}
+
+int AutomationLaneView::playheadX() const noexcept
+{
+    return (int) beatToX (std::fmod (std::max (0.0, playBeat), std::max (1.0, lengthBeats * 1000)));
+}
+
+void AutomationLaneView::repaintPlayheadAt (int x)
+{
+    repaint (x - 1, 0, 3, getHeight());
+}
+
+void AutomationLaneView::resized() { pathDirty = true; }
+
+void AutomationLaneView::rebuildPath()
+{
+    pathDirty = false;
+    curvePath.clear(); curveFill.clear();
+    if (lane.points.empty()) return;
+    const int w = getWidth(), h = getHeight();
+    bool first = true;
+    for (int x = 0; x <= w; x += 2)
+    {
+        float v = 0;
+        lane.evaluate (xToBeat ((float) x), v);
+        const float y = valueToY (v);
+        if (first) { curvePath.startNewSubPath ((float) x, y); first = false; } else curvePath.lineTo ((float) x, y);
+    }
+    curveFill = curvePath;
+    curveFill.lineTo ((float) w, (float) h); curveFill.lineTo (0.0f, (float) h); curveFill.closeSubPath();
 }
 
 double AutomationLaneView::xToBeat (float x) const noexcept
@@ -115,21 +149,11 @@ void AutomationLaneView::paint (juce::Graphics& g)
 
     if (! lane.points.empty())
     {
-        juce::Path p;
-        bool first = true;
-        for (int x = 0; x <= w; x += 2)
-        {
-            float v = 0;
-            lane.evaluate (xToBeat ((float) x), v);
-            const float y = valueToY (v);
-            if (first) { p.startNewSubPath ((float) x, y); first = false; } else p.lineTo ((float) x, y);
-        }
-        juce::Path fill (p);
-        fill.lineTo ((float) w, (float) h); fill.lineTo (0.0f, (float) h); fill.closeSubPath();
+        if (pathDirty) rebuildPath();
         g.setColour (c.withAlpha (0.12f));
-        g.fillPath (fill);
+        g.fillPath (curveFill);
         g.setColour (c);
-        g.strokePath (p, juce::PathStrokeType (1.6f));
+        g.strokePath (curvePath, juce::PathStrokeType (1.6f));
 
         for (int i = 0; i < (int) lane.points.size(); ++i)
         {
@@ -159,7 +183,7 @@ void AutomationLaneView::paint (juce::Graphics& g)
     if (playVisible)
     {
         g.setColour (juce::Colours::white.withAlpha (0.85f));
-        g.drawVerticalLine ((int) beatToX (std::fmod (std::max (0.0, playBeat), std::max (1.0, lengthBeats * 1000))), 0.0f, (float) h);
+        g.drawVerticalLine (playheadX(), 0.0f, (float) h);
     }
     g.setColour (theme::outline);
     g.drawRect (getLocalBounds());
@@ -183,7 +207,7 @@ void AutomationLaneView::showPointMenu (int index)
         else pts[(size_t) index].curve = r == 1 ? 0.0f : r == 2 ? -0.6f : 0.6f;
         safe->selected.clear();
         safe->commit();
-        safe->repaint();
+        safe->invalidateCurve();
     });
 }
 
@@ -203,7 +227,7 @@ void AutomationLaneView::mouseDown (const juce::MouseEvent& e)
     {
         mode = Mode::Point; dragIndex = hit;
         if (! isSelected (hit)) selected.clear();
-        repaint();
+        invalidateCurve();
         return;
     }
 
@@ -233,14 +257,14 @@ void AutomationLaneView::mouseDown (const juce::MouseEvent& e)
         mode = Mode::Erase;
         eraseFrom = std::clamp (xToBeat (pos.x), 0.0, lengthBeats);
         if (hit >= 0) lane.points.erase (lane.points.begin() + hit);
-        repaint();
+        invalidateCurve();
         return;
     }
     if (pencil)
     {
         mode = Mode::Pencil;
         lane.setPoint (snap (xToBeat (pos.x), false), yToValue (pos.y));
-        repaint();
+        invalidateCurve();
         return;
     }
 
@@ -250,7 +274,7 @@ void AutomationLaneView::mouseDown (const juce::MouseEvent& e)
     for (int i = 0; i < (int) lane.points.size(); ++i)
         if (std::abs (lane.points[(size_t) i].beat - beat) <= 1.0e-3) { dragIndex = i; break; }
     mode = Mode::Point;
-    repaint();
+    invalidateCurve();
 }
 
 void AutomationLaneView::mouseDrag (const juce::MouseEvent& e)
@@ -266,7 +290,7 @@ void AutomationLaneView::mouseDrag (const juce::MouseEvent& e)
             const double hi = dragIndex + 1 < (int) pts.size() ? pts[(size_t) dragIndex + 1].beat - 1.0e-3 : lengthBeats;
             pts[(size_t) dragIndex].beat = std::clamp (snap (xToBeat (pos.x), e.mods.isAltDown()), lo, std::max (lo, hi));
             pts[(size_t) dragIndex].value = yToValue (pos.y);
-            repaint();
+            invalidateCurve();
             break;
         }
         case Mode::Curve:
@@ -274,7 +298,7 @@ void AutomationLaneView::mouseDrag (const juce::MouseEvent& e)
             if (curveIndex < 0 || curveIndex >= (int) lane.points.size()) return;
             const float d = (yToValue (pos.y) - curveStartValue) * 2.0f;
             lane.points[(size_t) curveIndex].curve = std::clamp (curveOrig + d, -1.0f, 1.0f);
-            repaint();
+            invalidateCurve();
             break;
         }
         case Mode::Pencil:
@@ -282,7 +306,7 @@ void AutomationLaneView::mouseDrag (const juce::MouseEvent& e)
                 const double b = std::round (xToBeat (pos.x) * 32.0) / 32.0;    // 1/32 beat resolution
                 lane.setPoint (std::clamp (b, 0.0, lengthBeats), yToValue (pos.y), 1.0 / 32.0 - 1.0e-4);
             }
-            repaint();
+            invalidateCurve();
             break;
         case Mode::Band:
             bandNow = e.getPosition();
@@ -296,7 +320,7 @@ void AutomationLaneView::mouseDrag (const juce::MouseEvent& e)
                                                [lo, hi] (const AutoPoint& p) { return p.beat >= lo && p.beat <= hi; }),
                                lane.points.end());
             eraseFrom = b;
-            repaint();
+            invalidateCurve();
             break;
         }
         case Mode::None: break;
@@ -319,7 +343,7 @@ void AutomationLaneView::mouseUp (const juce::MouseEvent& e)
     else if (m == Mode::Point || m == Mode::Curve || m == Mode::Pencil || m == Mode::Erase)
     {
         commit();
-        repaint();
+        invalidateCurve();
     }
     dragIndex = -1; curveIndex = -1;
     juce::ignoreUnused (e);
@@ -332,7 +356,7 @@ void AutomationLaneView::mouseDoubleClick (const juce::MouseEvent& e)
     lane.points.erase (lane.points.begin() + hit);
     selected.clear();
     commit();
-    repaint();
+    invalidateCurve();
 }
 
 void AutomationLaneView::deleteSelected()
@@ -343,7 +367,7 @@ void AutomationLaneView::deleteSelected()
         if (*it >= 0 && *it < (int) lane.points.size()) lane.points.erase (lane.points.begin() + *it);
     selected.clear();
     commit();
-    repaint();
+    invalidateCurve();
 }
 
 bool AutomationLaneView::keyPressed (const juce::KeyPress& k)

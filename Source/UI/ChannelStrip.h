@@ -32,6 +32,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
 private:
@@ -54,7 +55,7 @@ private:
     EngineController& controller;
     PresetManager& presets;
     const Id trackId;
-    bool selected = false, isMaster = false;
+    bool selected = false, isMaster = false, muteGestureOpen = false;
     TrackKind kind = TrackKind::Audio;
     juce::Colour colour { 0xff4fc3f7 };
     juce::String nameText, line1, lastSignature;

@@ -36,6 +36,12 @@ private:
         GearButton() : juce::Button ("settings") { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
         void paintButton (juce::Graphics&, bool over, bool down) override;
     };
+    // "..." overflow button (three dots); lights up when a hidden toggle is on.
+    struct MoreButton : public juce::Button {
+        bool lit = false;
+        MoreButton() : juce::Button ("more") { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+        void paintButton (juce::Graphics&, bool over, bool down) override;
+    };
     // Tempo read-out: drag vertically to change, double-click to type.
     struct TempoLabel : public juce::Label {
         std::function<void (double)> onDragTempo;
@@ -48,6 +54,8 @@ private:
     void timerCallback() override;
     void refresh (bool force);
     void commitTempo();
+    void showOverflowMenu();
+    void applyCompactLabels (bool compact);
     void tempoChanged (double bpm);
 
     EngineController& controller;
@@ -60,6 +68,8 @@ private:
     juce::TextButton pageButtons[3];
     juce::ToggleButton dockButtons[3];
     GearButton settingsButton;
+    MoreButton moreButton;
+    bool overflowMetro = false, overflowSecondary = false, compactLabels = false;
 
     // layout results (used by paint)
     juce::Rectangle<int> positionR, phaseR, cpuR, masterLabelR, tempoLabelR;

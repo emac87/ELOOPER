@@ -13,12 +13,22 @@ namespace {
         cmdMixer, cmdAutomation, cmdEditor, cmdLoops, cmdTimeline, cmdBounced,
         cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets,
         cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdCheckUpdates, cmdAutoUpdate,
+        cmdOpenAutosave, cmdStopAll,
+        cmdScene1 = 0x3200, cmdScene2, cmdScene3, cmdScene4, cmdScene5, cmdScene6, cmdScene7, cmdScene8, cmdScene9,
         cmdZoom100 = 0x3100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200
     };
     constexpr double zoomLevels[] = { 1.0, 1.25, 1.5, 1.75, 2.0 };
     constexpr double defaultUiScale = 1.25;
     constexpr int menuBarHeight = 24;
     constexpr int barThickness = 5;
+    constexpr int autosaveIntervalMs = 2 * 60 * 1000;
+
+    // Show the dirty marker in the title bar.
+    juce::String titleFor (const juce::File& f, bool dirty)
+    {
+        return "ELooper - " + (f == juce::File() ? juce::String ("Untitled") : f.getFileNameWithoutExtension())
+                            + (dirty ? juce::String (juce::CharPointer_UTF8 (" \xe2\x80\xa2")) : juce::String());
+    }
 }
 
 MainComponent::MainComponent (EngineController& c, MidiMapping& mm, PresetManager& p)
@@ -85,10 +95,12 @@ MainComponent::MainComponent (EngineController& c, MidiMapping& mm, PresetManage
     setPage (Page::Loops);
     updateTitle();
     setSize (1280, 800);
+    startTimer (autosaveIntervalMs);
 }
 
 MainComponent::~MainComponent()
 {
+    stopTimer();
 #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu (nullptr);
 #endif
@@ -211,6 +223,7 @@ void MainComponent::sessionChanged (Change what, Id)
         selection.clear();
         for (auto& t : controller.session().tracks)
             if (! t->bounced && t->kind != TrackKind::Master) { selection.select (t->id); break; }
+        setDirty (false);   // new / opened: clean (callers that load recovered work re-mark it)
         updateTitle();
     } else if (what == Change::Structure) {
         if (selection.trackId != kInvalidId && controller.session().findTrack (selection.trackId) == nullptr)
@@ -218,6 +231,17 @@ void MainComponent::sessionChanged (Change what, Id)
         else if (selection.loopId != kInvalidId && controller.session().findLoop (selection.loopId) == nullptr)
             selection.select (selection.trackId);
     }
+    if (what != Change::Transport && what != Change::Session) {
+        ++changeCount;
+        setDirty (true);
+    }
+}
+
+void MainComponent::setDirty (bool d)
+{
+    if (d) { if (dirty) return; dirty = true; }
+    else   { if (! dirty) return; dirty = false; }
+    updateTitle();
 }
 
 void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
@@ -228,8 +252,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
 void MainComponent::updateTitle()
 {
     if (auto* top = getTopLevelComponent()) {
-        const auto f = controller.session().file;
-        top->setName ("ELooper - " + (f == juce::File() ? juce::String ("Untitled") : f.getFileNameWithoutExtension()));
+        top->setName (titleFor (controller.session().file, dirty));
     }
 }
 
@@ -237,8 +260,35 @@ void MainComponent::updateTitle()
 void MainComponent::newSession()
 {
     auto* c = &controller;
-    ui::confirm ("New Session", "Discard the current session? Unsaved changes will be lost.", "New",
-                 [c] { c->newSession(); });
+    juce::Component::SafePointer<MainComponent> self (this);
+    runIfSafeToDiscard ([self, c] {
+        c->newSession();
+        if (self != nullptr) self->setDirty (false);
+    });
+}
+
+void MainComponent::runIfSafeToDiscard (std::function<void()> proceed)
+{
+    if (! dirty) { if (proceed) proceed(); return; }
+    if (askingUnsaved) return;   // a prompt is already showing
+    askingUnsaved = true;
+
+    juce::Component::SafePointer<MainComponent> self (this);
+    const auto name = controller.session().file == juce::File() ? juce::String ("Untitled")
+                                                                : controller.session().file.getFileNameWithoutExtension();
+    // Buttons: 1 = Save, 2 = Don't Save, 0 = Cancel (JUCE returns 0 for the last button).
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                      .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                      .withTitle ("Unsaved changes")
+                                      .withMessage ("Do you want to save the changes to \"" + name + "\" before continuing?")
+                                      .withButton ("Save").withButton ("Don't Save").withButton ("Cancel"),
+                                  [self, proceed] (int r) {
+        if (self == nullptr) return;
+        self->askingUnsaved = false;
+        if (r == 1)
+            self->saveProject ([self, proceed] (bool ok) { if (ok && self != nullptr && proceed) proceed(); });
+        else if (r == 2) { if (proceed) proceed(); }
+    });
 }
 
 juce::File MainComponent::defaultProjectDir() const
@@ -248,29 +298,64 @@ juce::File MainComponent::defaultProjectDir() const
     return juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
 }
 
+juce::File MainComponent::autosaveDir()
+{
+    auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    base = base.getChildFile ("Application Support");
+   #endif
+    return base.getChildFile ("ELooper").getChildFile ("Autosave");
+}
+
 void MainComponent::openProject()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Open ELooper project", defaultProjectDir());
+    juce::Component::SafePointer<MainComponent> self (this);
+    runIfSafeToDiscard ([self] { if (self != nullptr) self->openProjectFrom (self->defaultProjectDir(), false); });
+}
+
+void MainComponent::openAutosave()
+{
+    juce::Component::SafePointer<MainComponent> self (this);
+    runIfSafeToDiscard ([self] { if (self != nullptr) self->openProjectFrom (autosaveDir(), true); });
+}
+
+void MainComponent::openProjectFrom (const juce::File& startDir, bool isAutosave)
+{
+    chooser = std::make_unique<juce::FileChooser> (isAutosave ? "Open autosaved project" : "Open ELooper project", startDir);
     juce::Component::SafePointer<MainComponent> self (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-                          [self] (const juce::FileChooser& fc) {
+                          [self, isAutosave] (const juce::FileChooser& fc) {
         const auto f = fc.getResult();
         if (self == nullptr || f == juce::File()) return;
-        SessionSerializer::load (self->controller, f, [self] (juce::Result r) {
-            if (r.failed()) ui::alert ("Could not open project", r.getErrorMessage());
-            else if (self != nullptr) self->updateTitle();
-        });
+        self->loadProjectFolder (f, isAutosave);
     });
 }
 
-void MainComponent::saveProject()
+void MainComponent::loadProjectFolder (const juce::File& f, bool isAutosave)
 {
-    const auto f = controller.session().file;
-    if (f != juce::File() && f.hasFileExtension ("elooper")) writeProject (f);
-    else saveProjectAs();
+    juce::Component::SafePointer<MainComponent> self (this);
+    SessionSerializer::load (controller, f, [self, isAutosave] (juce::Result r) {
+        if (self == nullptr) return;
+        // A recovered autosave must not overwrite itself on Save: detach it from the file and
+        // keep it marked as unsaved. Otherwise the freshly opened project is clean.
+        if (isAutosave && self->controller.session().file != juce::File()) {
+            self->controller.session().file = juce::File();
+            self->setDirty (true);
+        } else if (! isAutosave)
+            self->setDirty (false);
+        self->updateTitle();
+        if (r.failed()) ui::alert ("Opened with problems", r.getErrorMessage());
+    });
 }
 
-void MainComponent::saveProjectAs()
+void MainComponent::saveProject (std::function<void (bool)> done)
+{
+    const auto f = controller.session().file;
+    if (f != juce::File() && f.hasFileExtension ("elooper")) { const bool ok = writeProject (f); if (done) done (ok); }
+    else saveProjectAs (std::move (done));
+}
+
+void MainComponent::saveProjectAs (std::function<void (bool)> done)
 {
     const auto f = controller.session().file;
     const auto start = (f != juce::File() ? f.getParentDirectory() : defaultProjectDir())
@@ -279,25 +364,43 @@ void MainComponent::saveProjectAs()
     juce::Component::SafePointer<MainComponent> self (this);
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::warnAboutOverwriting,
-                          [self] (const juce::FileChooser& fc) {
+                          [self, done] (const juce::FileChooser& fc) {
         auto file = fc.getResult();
-        if (self == nullptr || file == juce::File()) return;
+        if (self == nullptr) return;
+        if (file == juce::File()) { if (done) done (false); return; }
         if (! file.hasFileExtension ("elooper")) file = file.withFileExtension ("elooper");
-        self->writeProject (file);
+        const bool ok = self->writeProject (file);
+        if (done) done (ok);
     });
 }
 
-void MainComponent::writeProject (const juce::File& folder)
+bool MainComponent::writeProject (const juce::File& folder)
 {
-    if (! folder.isDirectory()) {
-        if (folder.existsAsFile()) { ui::alert ("Save failed", folder.getFullPathName() + " is a file, not a project folder."); return; }
-        const auto made = folder.createDirectory();
-        if (made.failed()) { ui::alert ("Save failed", made.getErrorMessage()); return; }
-    }
+    // SessionSerializer::save is atomic and creates the folder itself; on failure the previous
+    // project is untouched and the session stays dirty.
     const auto r = SessionSerializer::save (controller, folder);
-    if (r.failed()) { ui::alert ("Save failed", r.getErrorMessage()); return; }
-    controller.session().file = folder;
+    if (r.failed()) { ui::alert ("Save failed", r.getErrorMessage()); return false; }
+    setDirty (false);
+    autosavedAt = changeCount;
     updateTitle();
+    return true;
+}
+
+void MainComponent::timerCallback()
+{
+    if (dirty && changeCount != autosavedAt && ! controller.transportStatus().playing)
+        autosaveNow();
+}
+
+// Saves a copy into the Autosave folder; the session's own file and dirty flag are untouched.
+void MainComponent::autosaveNow()
+{
+    const auto f = controller.session().file;
+    auto name = (f == juce::File() ? juce::String ("Untitled") : f.getFileNameWithoutExtension()).replaceCharacters ("/\\:", "---");
+    const auto target = autosaveDir().getChildFile (name + ".elooper");
+    const auto r = SessionSerializer::save (controller, target, false);
+    if (r.wasOk()) autosavedAt = changeCount;
+    else DBG ("Autosave failed: " << r.getErrorMessage());
 }
 
 void MainComponent::clearSelectedLoop()
@@ -340,14 +443,14 @@ void MainComponent::setUiScale (double scale)
 }
 
 // ---- menus & commands -----------------------------------------------------------------------
-juce::StringArray MainComponent::getMenuBarNames() { return { "File", "Edit", "View", "Track" }; }
+juce::StringArray MainComponent::getMenuBarNames() { return { "File", "Edit", "View", "Scenes", "Track" }; }
 
 juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 {
     juce::PopupMenu m;
     auto add = [&] (juce::CommandID id) { m.addCommandItem (&commandManager, id); };
     switch (index) {
-        case 0: add (cmdNew); add (cmdOpen); m.addSeparator(); add (cmdSave); add (cmdSaveAs); m.addSeparator();
+        case 0: add (cmdNew); add (cmdOpen); add (cmdOpenAutosave); m.addSeparator(); add (cmdSave); add (cmdSaveAs); m.addSeparator();
                 add (cmdCheckUpdates); add (cmdAutoUpdate); break;
         case 1: add (cmdSettings); break;
         case 2: add (cmdLoops); add (cmdTimeline); add (cmdBounced); m.addSeparator();
@@ -362,7 +465,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                     m.addSubMenu ("Zoom", zoom);
                 }
                 break;
-        case 3: add (cmdAddAudio); add (cmdAddInstrument); add (cmdAddBus); m.addSeparator();
+        case 3: for (int k = 0; k < 9; ++k) add (cmdScene1 + k);
+                m.addSeparator(); add (cmdStopAll); break;
+        case 4: add (cmdAddAudio); add (cmdAddInstrument); add (cmdAddBus); m.addSeparator();
                 add (cmdBounceTrack); add (cmdPresets); break;
         default: break;
     }
@@ -374,7 +479,9 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
     c.addArray ({ cmdNew, cmdOpen, cmdSave, cmdSaveAs, cmdSettings, cmdPlayStop, cmdRecord, cmdOverdub, cmdClear,
                   cmdMixer, cmdAutomation, cmdEditor, cmdLoops, cmdTimeline, cmdBounced,
                   cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets,
-                  cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdCheckUpdates, cmdAutoUpdate, cmdZoom100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200 });
+                  cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdCheckUpdates, cmdAutoUpdate, cmdOpenAutosave, cmdStopAll,
+                  cmdScene1, cmdScene2, cmdScene3, cmdScene4, cmdScene5, cmdScene6, cmdScene7, cmdScene8, cmdScene9,
+                  cmdZoom100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200 });
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& i)
@@ -389,6 +496,21 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdSave:     i.setInfo ("Save", "Save the project", "File", 0); i.addDefaultKeypress ('s', cmd); break;
         case cmdSaveAs:   i.setInfo ("Save As...", "Save the project under a new name", "File", 0);
                           i.addDefaultKeypress ('s', cmd | ModifierKeys::shiftModifier); break;
+        case cmdOpenAutosave: {
+            i.setInfo ("Open Autosave...", "Recover a project from the autosave folder", "File", 0);
+            i.setActive (autosaveDir().isDirectory());
+            break;
+        }
+        case cmdScene1: case cmdScene2: case cmdScene3: case cmdScene4: case cmdScene5:
+        case cmdScene6: case cmdScene7: case cmdScene8: case cmdScene9: {
+            const int n = (int) (id - cmdScene1) + 1;
+            i.setInfo ("Launch Scene " + juce::String (n), "Launch scene " + juce::String (n), "Scenes", 0);
+            i.addDefaultKeypress ('0' + n, ModifierKeys());
+            i.setActive (n <= controller.numScenes());
+            break;
+        }
+        case cmdStopAll:  i.setInfo ("Stop All Loops", "Stop every loop", "Scenes", 0);
+                          i.addDefaultKeypress ('0', ModifierKeys()); break;
         case cmdCheckUpdates: i.setInfo ("Check for Updates...", "Look for a newer version of ELooper", "File", 0); break;
         case cmdAutoUpdate: i.setInfo ("Update Automatically", "Check for updates when ELooper starts", "File", 0);
                           i.setTicked (settings != nullptr && settings->getBoolValue (Updater::autoUpdateKey, true)); break;
@@ -433,11 +555,31 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
     }
 }
 
+// True while a text field or combo box has keyboard focus: digits belong to it then.
+bool MainComponent::sceneKeysBlocked() const
+{
+    auto* f = juce::Component::getCurrentlyFocusedComponent();
+    if (f == nullptr) return false;
+    if (dynamic_cast<juce::TextInputTarget*> (f) != nullptr || dynamic_cast<juce::ComboBox*> (f) != nullptr)
+        return true;
+    return f->findParentComponentOfClass<juce::ComboBox>() != nullptr;
+}
+
 bool MainComponent::perform (const InvocationInfo& info)
 {
     switch (info.commandID) {
         case cmdNew:      newSession(); return true;
         case cmdOpen:     openProject(); return true;
+        case cmdOpenAutosave: openAutosave(); return true;
+        case cmdScene1: case cmdScene2: case cmdScene3: case cmdScene4: case cmdScene5:
+        case cmdScene6: case cmdScene7: case cmdScene8: case cmdScene9:
+            if (info.invocationMethod == InvocationInfo::fromKeyPress && sceneKeysBlocked()) return false;
+            controller.launchScene ((int) (info.commandID - cmdScene1));
+            return true;
+        case cmdStopAll:
+            if (info.invocationMethod == InvocationInfo::fromKeyPress && sceneKeysBlocked()) return false;
+            controller.stopAllLoops();
+            return true;
         case cmdSave:     saveProject(); return true;
         case cmdSaveAs:   saveProjectAs(); return true;
         case cmdSettings: showSettingsWindow (controller, midiMap); return true;

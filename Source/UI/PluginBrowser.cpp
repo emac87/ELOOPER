@@ -193,6 +193,19 @@ void showPluginMenu (EngineController& c, Id trackId, FxChain chain, int insertI
     if (list.empty()) {
         menu.addItem (-1, juce::String (juce::CharPointer_UTF8 ("No plug-ins found \xe2\x80\x94 scan first")), false);
     } else {
+        // Built-in instruments first (always there, no scan needed).
+        if (chain == FxChain::Instrument) {
+            bool any = false;
+            for (size_t i = 0; i < list.size(); ++i)
+                if (PluginHost::isBuiltIn (list[i])) {
+                    if (! any) { menu.addSectionHeader ("Built in"); any = true; }
+                    auto it = itemFor (i, false);
+                    it.text = list[i].name + "  (multi-engine synth)";
+                    menu.addItem (it);
+                }
+            if (any) menu.addSeparator();
+        }
+
         // Recently used
         const auto recent = loadRecent (chain);
         bool anyRecent = false;

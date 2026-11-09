@@ -62,6 +62,18 @@ void TransportBar::GearButton::paintButton (juce::Graphics& g, bool over, bool d
     g.fillPath (p, juce::AffineTransform::translation (c.x, c.y));
 }
 
+void TransportBar::MoreButton::paintButton (juce::Graphics& g, bool over, bool down)
+{
+    auto r = getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (lit ? theme::accent.withAlpha (0.2f) : theme::panelRaised.brighter (down ? 0.2f : over ? 0.1f : 0.0f));
+    g.fillRoundedRectangle (r, 6.0f);
+    g.setColour (lit ? theme::accent : theme::outline);
+    g.drawRoundedRectangle (r, 6.0f, 1.0f);
+    g.setColour (lit ? theme::accent : theme::text);
+    const auto c = r.getCentre();
+    for (int i = -1; i <= 1; ++i) g.fillEllipse (c.x + (float) i * 7.0f - 2.0f, c.y - 2.0f, 4.0f, 4.0f);
+}
+
 void TransportBar::TempoLabel::mouseDown (const juce::MouseEvent& e)
 {
     dragStart = current;
@@ -105,10 +117,10 @@ TransportBar::TransportBar (EngineController& c) : controller (c)
     };
     addAndMakeVisible (sigBox);
 
-    for (int b : { 1, 2, 4, 8, 16, 32 }) masterBox.addItem (juce::String (b), b);
+    for (int b : { 1, 2, 4, 8, 16, 32 }) masterBox.addItem (juce::String (b) + (b == 1 ? " bar" : " bars"), b);
     masterBox.addSeparator();
     masterBox.addItem ("Custom...", customMasterId);
-    masterBox.setTooltip ("Bars to record before a new loop closes and starts looping");
+    masterBox.setTooltip ("Loop length in bars: how many bars the first loop records before it closes and starts looping");
     masterBox.onChange = [this] {
         const int id = masterBox.getSelectedId();
         if (id == customMasterId) {
@@ -156,10 +168,15 @@ TransportBar::TransportBar (EngineController& c) : controller (c)
         addAndMakeVisible (b);
     }
 
+    moreButton.setTooltip ("More: Tap tempo, Link, Link start/stop sync, Arrangement record");
+    moreButton.onClick = [this] { showOverflowMenu(); };
+    addChildComponent (moreButton);
+
     settingsButton.setTooltip ("Settings (Cmd+,)");
     settingsButton.onClick = [this] { if (onSettings) onSettings(); };
     addAndMakeVisible (settingsButton);
 
+    for (int i = 0; i < 3; ++i) pageButtons[i].setTooltip (juce::String (pageNames[i]) + " page");
     refresh (true);
     startTimerHz (theme::uiRefreshHz);
 }
@@ -178,50 +195,130 @@ void TransportBar::setDockOn (Dock d, bool on)
     dockButtons[(int) d].setToggleState (on, juce::dontSendNotification);
 }
 
+void TransportBar::applyCompactLabels (bool compact)
+{
+    if (compact == compactLabels) return;
+    compactLabels = compact;
+    const char* pageFull[] = { "Loops", "Timeline", "Bounced" };
+    const char* pageShort[] = { "Loops", "Time", "Bounce" };
+    const char* dockFull[] = { "Mixer", "Automation", "Editor" };
+    const char* dockShort[] = { "Mix", "Auto", "Edit" };
+    for (int i = 0; i < 3; ++i) {
+        pageButtons[i].setButtonText (compact ? pageShort[i] : pageFull[i]);
+        dockButtons[i].setButtonText (compact ? dockShort[i] : dockFull[i]);
+    }
+}
+
 void TransportBar::resized()
 {
     const int h = getHeight(), m = 10, gap = 6;
     const int bh = 40, by = (h - bh) / 2;
-    int right = getWidth() - m;
+    const int W = getWidth();
 
-    // widths
-    constexpr int playW = 48, posW = 100, phaseW = 84, tempoW = 84, tapW = 52, sigW = 68, masterLblW = 54,
-                  masterW = 68, metroW = 66, linkW = 80, syncW = 58, arrW = 82;
-    constexpr int cpuW = 72, pageW = 74, dockW = 58, gearSize = 44;
+    // Collapse in stages until everything fits:
+    // 0 full | 1 no CPU | 2 no phase bar | 3 no "Loop" label | 4 tighter widths | 5 Tap/Link/Sync/Arr -> "..." menu
+    // 6 compact page/dock labels | 7 Metro -> "..." menu too
+    struct Plan { bool cpu, phase, label, tight, overflow, compact, metroIn; };
+    constexpr int numStages = 8;
+    auto planFor = [] (int s) {
+        return Plan { s < 1, s < 2, s < 3, s >= 4, s >= 5, s >= 6, s < 7 };
+    };
+    constexpr int playW = 48, phaseW = 84, tapW = 52, labelW = 34, metroW = 66, linkW = 80, syncW = 58, arrW = 82,
+                  moreW = 40, cpuW = 72, gearSize = 44;
+    struct Widths { int pos, tempo, sig, master, page, dockMix, dockAuto, dockEdit; };
+    auto widthsFor = [] (const Plan& p) {
+        Widths w;
+        w.pos = p.tight ? 84 : 100; w.tempo = p.tight ? 72 : 84; w.sig = p.tight ? 58 : 68; w.master = p.tight ? 74 : 82;
+        w.page = p.compact ? 56 : 74;
+        w.dockMix = p.compact ? 48 : 58; w.dockAuto = p.compact ? 48 : 98; w.dockEdit = p.compact ? 48 : 58;
+        return w;
+    };
+    auto leftWidth = [&] (const Plan& p, const Widths& w) {
+        int n = 0, x = 0;
+        auto add = [&] (int cw) { x += cw; ++n; };
+        add (playW); add (w.pos);
+        if (p.phase) add (phaseW);
+        add (w.tempo);
+        if (! p.overflow) add (tapW);
+        add (w.sig);
+        add ((p.label ? labelW : 0) + w.master);
+        if (p.metroIn) add (metroW);
+        if (! p.overflow) { add (linkW); add (syncW); add (arrW); }
+        else add (moreW);
+        return x + (n - 1) * gap;
+    };
+    auto rightWidth = [&] (const Plan& p, const Widths& w) {
+        return gearSize + 10 + (p.cpu ? cpuW + 10 : 0) + w.dockMix + w.dockAuto + w.dockEdit + 2 * 2 + 10
+               + 3 * w.page + 2 * 2 + 14;
+    };
+
+    int stage = 0;
+    for (; stage < numStages - 1; ++stage) {
+        const auto p = planFor (stage);
+        const auto w = widthsFor (p);
+        if (m + leftWidth (p, w) + rightWidth (p, w) + m <= W) break;
+    }
+    const auto plan = planFor (stage);
+    const auto wd = widthsFor (plan);
+    applyCompactLabels (plan.compact);
+    overflowSecondary = plan.overflow;
+    overflowMetro = ! plan.metroIn;
 
     // right cluster (right-aligned): settings, cpu (optional), docks, pages
+    int right = W - m;
     settingsButton.setBounds (right - gearSize, (h - gearSize) / 2, gearSize, gearSize); right -= gearSize + 10;
-    const int dockWs[3] = { dockW, dockW + 40, dockW };   // "Automation" is wider
-    const int pagesW = 3 * pageW + 2 * 2, docksW = dockWs[0] + dockWs[1] + dockWs[2] + 2 * 2;
-    const int leftLimitNeeded = m + playW + gap + posW + gap + tempoW + gap + tapW + gap + sigW + gap
-                                + masterLblW + masterW + gap + metroW + gap + linkW + gap + arrW;
-    const bool showCpu = right - (pagesW + docksW + 10 + cpuW + 10) > leftLimitNeeded;
-    if (showCpu) { cpuR = { right - cpuW, by, cpuW, bh }; right -= cpuW + 10; } else cpuR = {};
+    if (plan.cpu) { cpuR = { right - cpuW, by, cpuW, bh }; right -= cpuW + 10; } else cpuR = {};
+    const int dockWs[3] = { wd.dockMix, wd.dockAuto, wd.dockEdit };
     for (int i = 2; i >= 0; --i) { dockButtons[i].setBounds (right - dockWs[i], by, dockWs[i], bh); right -= dockWs[i] + (i > 0 ? 2 : 0); }
     right -= 10;
-    for (int i = 2; i >= 0; --i) { pageButtons[i].setBounds (right - pageW, by, pageW, bh); right -= pageW + (i > 0 ? 2 : 0); }
-    right -= 14;
+    for (int i = 2; i >= 0; --i) { pageButtons[i].setBounds (right - wd.page, by, wd.page, bh); right -= wd.page + (i > 0 ? 2 : 0); }
 
     // left cluster
     int x = m;
     auto place = [&] (juce::Component& c, int w) { c.setBounds (x, by, w, bh); x += w + gap; };
     place (playButton, playW);
-    positionR = { x, by, posW, bh }; x += posW + gap;
-    const int restW = tempoW + gap + tapW + gap + sigW + gap + masterLblW + masterW + gap + metroW + gap + linkW + gap + arrW;
-    const bool showPhase = x + phaseW + gap + restW <= right;
-    if (showPhase) { phaseR = { x, by + 8, phaseW, bh - 16 }; x += phaseW + gap; } else phaseR = {};
-    tempoLabelR = { x, by, tempoW, bh };
-    place (tempoLabel, tempoW);
-    place (tapButton, tapW);
-    place (sigBox, sigW);
-    masterLabelR = { x, by, masterLblW, bh }; x += masterLblW;
-    place (masterBox, masterW);
-    place (metroButton, metroW);
-    place (linkButton, linkW);
-    const bool showSync = x + syncW + gap + arrW <= right;
-    syncButton.setVisible (showSync);
-    if (showSync) place (syncButton, syncW);
-    place (arrButton, arrW);
+    positionR = { x, by, wd.pos, bh }; x += wd.pos + gap;
+    if (plan.phase) { phaseR = { x, by + 8, phaseW, bh - 16 }; x += phaseW + gap; } else phaseR = {};
+    tempoLabelR = { x, by, wd.tempo, bh };
+    place (tempoLabel, wd.tempo);
+    tapButton.setVisible (! plan.overflow);
+    if (! plan.overflow) place (tapButton, tapW);
+    place (sigBox, wd.sig);
+    if (plan.label) { masterLabelR = { x, by, labelW, bh }; x += labelW; } else masterLabelR = {};
+    place (masterBox, wd.master);
+    metroButton.setVisible (plan.metroIn);
+    if (plan.metroIn) place (metroButton, metroW);
+    for (auto* b : { &linkButton, &syncButton, &arrButton }) b->setVisible (! plan.overflow);
+    moreButton.setVisible (plan.overflow);
+    if (! plan.overflow) { place (linkButton, linkW); place (syncButton, syncW); place (arrButton, arrW); }
+    else moreButton.setBounds (x, by, moreW, bh);
+}
+
+void TransportBar::showOverflowMenu()
+{
+    juce::PopupMenu m;
+    const auto st = controller.transportStatus();
+    auto toggleItem = [&] (int id, const juce::String& name, juce::ToggleButton& b) {
+        m.addItem (id, name, true, b.getToggleState());
+    };
+    if (overflowMetro) toggleItem (1, "Metronome", metroButton);
+    m.addItem (2, "Tap tempo");
+    toggleItem (3, st.linkEnabled && st.linkPeers > 0 ? "Ableton Link (" + juce::String (st.linkPeers) + " peers)" : juce::String ("Ableton Link"), linkButton);
+    toggleItem (4, "Link start/stop sync", syncButton);
+    toggleItem (5, "Arrangement record", arrButton);
+    juce::Component::SafePointer<TransportBar> safe (this);
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&moreButton), [safe] (int r) {
+        if (safe == nullptr || r == 0) return;
+        auto flip = [] (juce::ToggleButton& b) { b.setToggleState (! b.getToggleState(), juce::dontSendNotification); if (b.onClick) b.onClick(); };
+        switch (r) {
+            case 1: flip (safe->metroButton); break;
+            case 2: safe->controller.tapTempo(); break;
+            case 3: flip (safe->linkButton); break;
+            case 4: flip (safe->syncButton); break;
+            case 5: flip (safe->arrButton); break;
+            default: break;
+        }
+    });
 }
 
 void TransportBar::paint (juce::Graphics& g)
@@ -255,9 +352,11 @@ void TransportBar::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f);
     }
 
-    g.setColour (theme::textDim);
-    g.setFont (theme::font (13.0f, true));
-    g.drawText ("Master", masterLabelR, juce::Justification::centredLeft);
+    if (! masterLabelR.isEmpty()) {
+        g.setColour (theme::textDim);
+        g.setFont (theme::font (13.0f, true));
+        g.drawText ("Loop", masterLabelR, juce::Justification::centredLeft);
+    }
 
     if (! cpuR.isEmpty()) {
         auto r = cpuR.toFloat();
@@ -327,13 +426,17 @@ void TransportBar::refresh (bool force)
     }
     if (tr.masterBars != lastMasterBars || force) {
         lastMasterBars = tr.masterBars;
-        masterBox.setText (juce::String (lastMasterBars), juce::dontSendNotification);
+        masterBox.setText (juce::String (lastMasterBars) + (lastMasterBars == 1 ? " bar" : " bars"), juce::dontSendNotification);
     }
 
     metroButton.setToggleState (tr.metronome, juce::dontSendNotification);
     syncButton.setToggleState (tr.linkStartStopSync, juce::dontSendNotification);
     arrButton.setToggleState (controller.isArrangementRecording(), juce::dontSendNotification);
     linkButton.setToggleState (s.linkEnabled, juce::dontSendNotification);
+    {
+        const bool lit = s.linkEnabled || tr.linkStartStopSync || controller.isArrangementRecording() || (overflowMetro && tr.metronome);
+        if (lit != moreButton.lit) { moreButton.lit = lit; moreButton.repaint(); }
+    }
     if (s.linkPeers != shownPeers || s.linkEnabled != shownLinkEnabled || force) {
         shownPeers = s.linkPeers; shownLinkEnabled = s.linkEnabled;
         linkButton.setButtonText (s.linkEnabled && s.linkPeers > 0 ? "Link " + juce::String (s.linkPeers) : "Link");

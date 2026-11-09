@@ -46,6 +46,7 @@ struct TrackNode {
     float smoothMonitor = 1, smoothMute = 1;
     bool isBusLikeOrAux() const noexcept { return kind == TrackKind::Bus || kind == TrackKind::Master || kind == TrackKind::AuxOut; }
     bool midiGateOpen = true;
+    bool flushNotes = false;   // transport stopped: send all-notes-off to this track's instrument once
     float smoothVol = 0, smoothPanL = 1, smoothPanR = 1, smoothInGain = 1;
     float smoothSend[kMaxSends] {};
     // Plug-in delay compensation: padding applied where this node's signal sums into another.
@@ -89,6 +90,29 @@ struct EngineCommand {
     LoopCommand loopCmd { LoopCommandType::Trigger };
     Id trackId = kInvalidId;
     double beat = 0;
+};
+
+// The transport as hosted plug-ins see it (tempo, bar, position, playing). Written by the audio
+// thread at the start of every block, read by plug-ins during that same block (same thread).
+class EnginePlayHead : public juce::AudioPlayHead {
+public:
+    BlockTime t;
+    juce::Optional<PositionInfo> getPosition() const override
+    {
+        PositionInfo info;
+        info.setBpm (t.tempo > 0 ? t.tempo : 120.0);
+        const int num = juce::jlimit (1, 32, (int) std::lround (t.beatsPerBar));
+        info.setTimeSignature (TimeSignature { num, 4 });
+        info.setPpqPosition (t.beatStart);
+        const double bar = std::floor (t.beatStart / juce::jmax (1.0, t.beatsPerBar));
+        info.setPpqPositionOfLastBarStart (bar * juce::jmax (1.0, t.beatsPerBar));
+        info.setBarCount ((int64_t) bar);
+        info.setIsPlaying (t.playing);
+        info.setIsLooping (false);
+        if (t.tempo > 0) info.setTimeInSeconds (t.beatStart * 60.0 / t.tempo);
+        if (t.tempo > 0) info.setTimeInSamples ((int64_t) (t.beatStart * 60.0 / t.tempo * t.sampleRate));
+        return info;
+    }
 };
 
 class AudioEngine : public juce::AudioIODeviceCallback,
@@ -136,7 +160,11 @@ public:
     void audioDeviceStopped() override;
     void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
 
+    // Given to every hosted plug-in (setPlayHead) so tempo-synced plug-ins follow the transport.
+    juce::AudioPlayHead* pluginPlayHead() noexcept { return &playHeadForPlugins; }
+
 private:
+    EnginePlayHead playHeadForPlugins;
     struct RawMidi { uint8_t data[3]; uint8_t size; int8_t device; double time; };
     void processCommands (const BlockTime& t);
     void processNode (RenderGraph& g, TrackNode& n, const BlockTime& t, const float* const* in, int numIn, int numSamples);

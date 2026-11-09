@@ -1,4 +1,5 @@
 #include "Engine/PluginHost.h"
+#include "Synth/plugin/ChimeraProcessor.h"
 
 namespace el {
 
@@ -116,7 +117,9 @@ struct PluginHost::Impl {
 
             struct Running { std::unique_ptr<juce::ChildProcess> proc; Job job; juce::File out; juce::uint32 started; };
             std::vector<Running> running;
-            const int maxParallel = juce::jlimit (1, 4, juce::SystemStats::getNumCpus() / 2);
+            // One scanner process at a time: scanning can happen mid-set, and several at once
+            // compete with the audio thread for CPU (dropouts).
+            const int maxParallel = 1;
             constexpr juce::uint32 timeoutMs = 60000;
             size_t next = 0, done = 0;
 
@@ -307,7 +310,15 @@ static std::vector<juce::PluginDescription> filtered (const juce::KnownPluginLis
 
 std::vector<juce::PluginDescription> PluginHost::instruments() const
 {
-    return filtered (knownList, [] (const auto& d) { return d.isInstrument; });
+    // The built-in Chimera synth is always available (no scan needed) and listed first.
+    auto list = filtered (knownList, [] (const auto& d) { return d.isInstrument; });
+    list.insert (list.begin(), el::chimera::ChimeraProcessor::makeDescription());
+    return list;
+}
+
+bool PluginHost::isBuiltIn (const juce::PluginDescription& d)
+{
+    return d.pluginFormatName == el::chimera::ChimeraProcessor::kFormatName;
 }
 
 std::vector<juce::PluginDescription> PluginHost::effects() const
@@ -322,6 +333,22 @@ std::vector<juce::PluginDescription> PluginHost::midiEffects() const
 
 void PluginHost::createInstance (const juce::PluginDescription& desc, double sampleRate, int blockSize, CreateCallback cb)
 {
+    if (isBuiltIn (desc)) {
+        // Built-in instruments are created here directly, but still delivered asynchronously
+        // like a hosted plug-in so callers see one behaviour.
+        if (desc.fileOrIdentifier == el::chimera::ChimeraProcessor::kIdentifier || desc.name == "Chimera") {
+            // std::function needs a copyable lambda, so the instance travels in a shared holder.
+            auto holder = std::make_shared<std::unique_ptr<juce::AudioPluginInstance>> (std::make_unique<el::chimera::ChimeraProcessor>());
+            (*holder)->setRateAndBufferSizeDetails (sampleRate, blockSize);
+            juce::MessageManager::callAsync ([holder, callback = std::move (cb)] {
+                if (callback) callback (std::move (*holder), {});
+            });
+        } else {
+            juce::MessageManager::callAsync ([callback = std::move (cb)] { if (callback) callback (nullptr, "Unknown built-in instrument."); });
+        }
+        return;
+    }
+
     formatManager.createPluginInstanceAsync (desc, sampleRate, blockSize,
         [callback = std::move (cb)] (std::unique_ptr<juce::AudioPluginInstance> p, const juce::String& err)
         {

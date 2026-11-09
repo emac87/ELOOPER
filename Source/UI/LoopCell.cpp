@@ -195,16 +195,16 @@ void LoopCell::mouseDown (const juce::MouseEvent& e)
 {
     selection.select (trackId, loopId);
     if (e.mods.isPopupMenu()) { showMenu(); return; }
-    if (e.getNumberOfClicks() > 1) return;      // double-click handled in mouseDoubleClick
+    // Live rule: every press acts, however fast you tap (no double-click swallowing a re-tap).
+    // Cmd-click opens the MIDI editor; Shift-click overdubs.
+    if (e.mods.isCommandDown()) { if (type == LoopType::Midi && onEdit) onEdit (trackId, loopId, true); return; }
     if (e.mods.isShiftDown()) controller.overdubLoop (loopId);
     else controller.triggerLoop (loopId);
 }
 
-void LoopCell::mouseDoubleClick (const juce::MouseEvent& e)
+void LoopCell::mouseDoubleClick (const juce::MouseEvent&)
 {
-    if (e.mods.isPopupMenu()) return;
-    if (type == LoopType::Audio) controller.overdubLoop (loopId);
-    else if (onEdit) onEdit (trackId, loopId, type == LoopType::Midi);
+    // Intentionally nothing: the second click already triggered in mouseDown.
 }
 
 void LoopCell::showMenu()

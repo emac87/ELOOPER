@@ -707,6 +707,7 @@ void EngineController::preparePlugin (PluginSlot& slot, std::unique_ptr<juce::Au
     if (slot.description.isInstrument) slot.numOutputChannels = PluginHost::enableMultiOut (*inst);
     else slot.numOutputChannels = inst->getTotalNumOutputChannels();
     preparedRate = audioEngine->sampleRate(); preparedBlock = maxBlock();
+    inst->setPlayHead (audioEngine->pluginPlayHead());   // tempo / position for synced plug-ins
     inst->setRateAndBufferSizeDetails (preparedRate, preparedBlock);
     inst->prepareToPlay (preparedRate, preparedBlock);
     slot.latencySamples = inst->getLatencySamples();

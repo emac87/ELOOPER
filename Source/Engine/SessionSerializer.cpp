@@ -273,6 +273,7 @@ void writeLoop (EngineController& c, juce::XmlElement& parent, const LoopModel& 
 
     if (l.rt != nullptr)
     {
+        e->setAttribute ("muted", l.rt->muted.load());
         e->setAttribute ("activeTake", l.rt->activeTakeIndex());
         for (int k = 0; k < l.rt->takeCount(); ++k)
         {
@@ -293,6 +294,8 @@ void writeLoop (EngineController& c, juce::XmlElement& parent, const LoopModel& 
     }
 }
 
+std::vector<Id> gMutedLoopsScratch;   // loops to mute after the session is installed (message thread only)
+
 LoopPtr readLoop (const juce::XmlElement& e, Id trackId, const juce::File& audioDir, double sampleRate,
                   juce::StringArray& errors)
 {
@@ -306,23 +309,49 @@ LoopPtr readLoop (const juce::XmlElement& e, Id trackId, const juce::File& audio
     l->automationLengthBeats = e.getDoubleAttribute ("automationLengthBeats", 16);
     if (auto* s = e.getChildByName ("SETTINGS")) l->settings = readLoopSettings (*s);
     l->pendingActiveTake = e.getIntAttribute ("activeTake", 0);
+    if (e.getBoolAttribute ("muted")) gMutedLoopsScratch.push_back (l->id);
 
     for (auto* m : e.getChildWithTagNameIterator ("MIDITAKE")) l->midiTakes.push_back (readMidiTake (*m));
     for (auto* a : e.getChildWithTagNameIterator ("LANE")) l->automation.push_back (readLane (*a));
 
+    // Takes keep their stored index: a take that fails to load leaves an empty placeholder so
+    // later takes (and activeTake) do not shift.
+    const int storedActive = l->pendingActiveTake;
+    int fallbackIndex = 0;
     for (auto* te : e.getChildWithTagNameIterator ("AUDIOTAKE"))
     {
+        const int idx = te->getIntAttribute ("index", fallbackIndex);
+        fallbackIndex = idx + 1;
+        const auto file = te->getStringAttribute ("file");
+        if (idx < 0 || idx >= kMaxTakes)
+        {
+            errors.add ("Skipped take with invalid index " + juce::String (idx) + " in loop \"" + l->name + "\"");
+            continue;
+        }
+        if ((int) l->pendingAudio.size() <= idx) l->pendingAudio.resize ((size_t) idx + 1);
         LoopModel::PendingTake take;
         take.beats = te->getDoubleAttribute ("beats");
-        if (readWav (audioDir.getChildFile (te->getStringAttribute ("file")), sampleRate, take.audio))
-            l->pendingAudio.push_back (std::move (take));
+        if (readWav (audioDir.getChildFile (file), sampleRate, take.audio))
+            l->pendingAudio[(size_t) idx] = std::move (take);
         else
-        {
-            errors.add ("Missing or unreadable audio: " + te->getStringAttribute ("file"));
-            // Keep take indices aligned with an empty placeholder is not possible; drop it.
-        }
+            errors.add ("Skipped take " + juce::String (idx + 1) + " of loop \"" + l->name
+                        + "\": missing or unreadable audio (" + file + ")");
     }
-    l->pendingActiveTake = juce::jlimit (0, juce::jmax (0, (int) l->pendingAudio.size() - 1), l->pendingActiveTake);
+    while (! l->pendingAudio.empty() && l->pendingAudio.back().audio.getNumSamples() == 0)
+        l->pendingAudio.pop_back();
+
+    if (! l->pendingAudio.empty())
+    {
+        // Active take: the stored one if it loaded, otherwise the nearest take that did.
+        const int n = (int) l->pendingAudio.size();
+        int best = -1;
+        for (int d = 0; d < n && best < 0; ++d)
+            for (int cand : { storedActive - d, storedActive + d })
+                if (cand >= 0 && cand < n && l->pendingAudio[(size_t) cand].audio.getNumSamples() > 0) { best = cand; break; }
+        l->pendingActiveTake = juce::jmax (0, best);
+    }
+    else
+        l->pendingActiveTake = juce::jlimit (0, juce::jmax (0, (int) l->midiTakes.size() - 1), storedActive);
     return l;
 }
 
@@ -358,6 +387,7 @@ void writeTrack (EngineController& c, juce::XmlElement& parent, const TrackModel
         setF (*m, "pan", t.rt->pan.load());
         m->setAttribute ("mute", t.rt->mute.load());
         m->setAttribute ("solo", t.rt->solo.load());
+        m->setAttribute ("armed", t.rt->armed.load());
         m->setAttribute ("eqEnabled", t.rt->eqEnabled.load());
         m->setAttribute ("monitor", (int) t.rt->monitor.load());
         juce::StringArray eq;
@@ -415,6 +445,7 @@ TrackPtr readTrack (const juce::XmlElement& e, const juce::File& audioDir, doubl
         t->rt->pan = (float) m->getDoubleAttribute ("pan", 0.5);
         t->rt->mute = m->getBoolAttribute ("mute");
         t->rt->solo = m->getBoolAttribute ("solo");
+        t->rt->armed = m->getBoolAttribute ("armed");
         t->rt->eqEnabled = m->getBoolAttribute ("eqEnabled", true);
         t->rt->monitor = getEnum (*m, "monitor", MonitorMode::Auto, (int) MonitorMode::Off);
         auto eq = juce::StringArray::fromTokens (m->getStringAttribute ("eq"), " ", "");
@@ -485,17 +516,32 @@ TransportSettings readTransport (const juce::XmlElement& e)
 } // namespace
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-juce::Result SessionSerializer::save (EngineController& controller, const juce::File& projectFolder)
+juce::Result SessionSerializer::save (EngineController& controller, const juce::File& projectFolder,
+                                      bool updateSessionFile)
 {
-    if (! projectFolder.createDirectory())
-        return juce::Result::fail ("Could not create project folder " + projectFolder.getFullPathName());
-    auto audioDir = projectFolder.getChildFile ("audio");
-    if (! audioDir.createDirectory())
-        return juce::Result::fail ("Could not create audio folder");
+    if (projectFolder.existsAsFile())
+        return juce::Result::fail (projectFolder.getFullPathName() + " is a file, not a project folder.");
+    // The save replaces the project folder as a whole, so never do that to a folder that isn't
+    // an ELooper project (e.g. Save As pointed at an existing folder of other files).
+    if (projectFolder.isDirectory() && ! projectFolder.getChildFile ("session.xml").existsAsFile()
+        && projectFolder.getNumberOfChildFiles (juce::File::findFilesAndDirectories) > 0)
+        return juce::Result::fail (projectFolder.getFullPathName() + " already exists and isn't an ELooper project. "
+                                   "Choose a new name for the project.");
+    if (! projectFolder.getParentDirectory().createDirectory())
+        return juce::Result::fail ("Could not create " + projectFolder.getParentDirectory().getFullPathName());
 
-    // Remove stale take files from a previous save into the same folder.
-    for (auto& f : audioDir.findChildFiles (juce::File::findFiles, false, "loop_*.wav"))
-        f.deleteFile();
+    // Everything is written next to the target first; the old project is only touched by the
+    // final rename, so a failure part-way leaves the previous save intact.
+    const auto tmpFolder = projectFolder.getSiblingFile (projectFolder.getFileName() + ".saving");
+    const auto oldFolder = projectFolder.getSiblingFile (projectFolder.getFileName() + ".old");
+    tmpFolder.deleteRecursively();
+    if (! tmpFolder.createDirectory())
+        return juce::Result::fail ("Could not create temporary folder " + tmpFolder.getFullPathName());
+    auto abort = [&tmpFolder] (const juce::String& msg) { tmpFolder.deleteRecursively(); return juce::Result::fail (msg); };
+
+    auto audioDir = tmpFolder.getChildFile ("audio");
+    if (! audioDir.createDirectory())
+        return abort ("Could not create audio folder");
 
     auto& session = controller.session();
     const double sr = controller.engine().sampleRate();
@@ -522,11 +568,55 @@ juce::Result SessionSerializer::save (EngineController& controller, const juce::
     }
 
     if (! errors.isEmpty())
-        return juce::Result::fail (errors.joinIntoString ("\n"));
-    if (! root.writeTo (projectFolder.getChildFile ("session.xml")))
-        return juce::Result::fail ("Could not write session.xml");
+        return abort (errors.joinIntoString ("\n"));
+    const auto xmlFile = tmpFolder.getChildFile ("session.xml");
+    if (! root.writeTo (xmlFile))
+        return abort ("Could not write session.xml");
 
-    session.file = projectFolder;
+    // Verify what was written before it replaces anything.
+    {
+        auto check = juce::parseXML (xmlFile);
+        if (check == nullptr || ! check->hasTagName ("ELooperSession"))
+            return abort ("Verification failed: session.xml could not be read back");
+        juce::WavAudioFormat wav;
+        for (auto* te : check->getChildWithTagNameIterator ("TRACKS"))
+            for (auto* tr : te->getChildWithTagNameIterator ("TRACK"))
+                for (auto* lo : tr->getChildWithTagNameIterator ("LOOP"))
+                    for (auto* at : lo->getChildWithTagNameIterator ("AUDIOTAKE"))
+                    {
+                        const auto f = audioDir.getChildFile (at->getStringAttribute ("file"));
+                        std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (f.createInputStream().release(), true));
+                        if (r == nullptr || r->lengthInSamples <= 0)
+                            return abort ("Verification failed: " + f.getFileName() + " could not be read back");
+                    }
+    }
+
+    // Swap into place. The previous project is kept as ".old" until the new one is in position.
+    const bool hadOld = projectFolder.exists();
+    if (hadOld)
+    {
+        oldFolder.deleteRecursively();
+        if (! projectFolder.moveFileTo (oldFolder))
+            return abort ("Could not replace the existing project (" + projectFolder.getFullPathName() + "); it was left unchanged.");
+    }
+    if (! tmpFolder.moveFileTo (projectFolder))
+    {
+        if (hadOld) oldFolder.moveFileTo (projectFolder);   // roll back
+        return abort ("Could not move the new save into place; the previous project was kept.");
+    }
+    if (hadOld) {
+        // Keep anything the user put in the project folder themselves (notes, artwork...); only
+        // ELooper's own session.xml and audio/ are replaced.
+        for (const auto& f : oldFolder.findChildFiles (juce::File::findFilesAndDirectories, false)) {
+            const auto name = f.getFileName();
+            if (name == "session.xml" || name == "audio") continue;
+            const auto dest = projectFolder.getChildFile (name);
+            if (! dest.exists()) f.moveFileTo (dest);
+        }
+        oldFolder.deleteRecursively();   // stale files go only now
+    }
+
+    if (updateSessionFile) session.file = projectFolder;
     return juce::Result::ok();
 }
 
@@ -545,6 +635,7 @@ void SessionSerializer::load (EngineController& controller, const juce::File& pr
     const auto audioDir = projectFolder.getChildFile ("audio");
     juce::StringArray errors;
 
+    gMutedLoopsScratch.clear();
     auto session = std::make_unique<Session>();
     session->nextId = juce::jmax ((Id) 2, getId (*xml, "nextId"));
     session->file = projectFolder;
@@ -580,12 +671,18 @@ void SessionSerializer::load (EngineController& controller, const juce::File& pr
         }
     session->nextId = juce::jmax (session->nextId, maxId + 1);
 
+    auto mutedLoops = std::move (gMutedLoopsScratch);
+    gMutedLoopsScratch.clear();
+
     controller.loadSession (std::move (session), [done, errors] (juce::StringArray loadErrors)
     {
         auto all = errors;
         all.addArray (loadErrors);
         if (done) done (all.isEmpty() ? juce::Result::ok() : juce::Result::fail (all.joinIntoString ("\n")));
     });
+
+    // The new session is installed by now (plugins may still be instantiating): restore loop mutes.
+    for (auto id : mutedLoops) controller.setLoopMuted (id, true);
 }
 
 } // namespace el

@@ -27,11 +27,23 @@ if(NOT MSVC)
     target_compile_options(elooper_core PRIVATE -Wall -Wextra)
 endif()
 
+# Chimera (built-in synth) DSP: pure C++17, no JUCE.
+file(GLOB CHIMERA_DSP_SOURCES CONFIGURE_DEPENDS Source/Synth/dsp/*.cpp)
+add_library(chimera_dsp STATIC ${CHIMERA_DSP_SOURCES})
+target_include_directories(chimera_dsp PUBLIC Source)
+if(NOT MSVC)
+    target_compile_options(chimera_dsp PRIVATE -Wall -Wextra)
+endif()
+
 if(ELOOPER_BUILD_TESTS)
     enable_testing()
     add_executable(elooper_core_tests Tests/TestMain.cpp Tests/CoreTests.cpp Tests/CoreExtraTests.cpp)
     target_link_libraries(elooper_core_tests PRIVATE elooper_core)
     add_test(NAME core COMMAND elooper_core_tests)
+    file(GLOB CHIMERA_TEST_SOURCES CONFIGURE_DEPENDS Tests/Synth*Tests.cpp)
+    add_executable(elooper_synth_tests Tests/TestMain.cpp ${CHIMERA_TEST_SOURCES})
+    target_link_libraries(elooper_synth_tests PRIVATE chimera_dsp)
+    add_test(NAME synth COMMAND elooper_synth_tests)
 endif()
 
 if(NOT ELOOPER_BUILD_APP)
@@ -57,7 +69,8 @@ juce_add_gui_app(ELooper
 )
 
 file(GLOB ELOOPER_APP_SOURCES CONFIGURE_DEPENDS
-    Source/Model/*.cpp Source/Engine/*.cpp Source/UI/*.cpp Source/Platform/*.cpp Source/Main.cpp)
+    Source/Model/*.cpp Source/Engine/*.cpp Source/UI/*.cpp Source/Platform/*.cpp Source/Main.cpp
+    Source/Synth/plugin/*.cpp Source/Synth/ui/*.cpp)
 target_sources(ELooper PRIVATE ${ELOOPER_APP_SOURCES})
 if(APPLE)
     file(GLOB ELOOPER_MAC_SOURCES CONFIGURE_DEPENDS Source/Platform/*.mm)
@@ -91,6 +104,7 @@ endif()
 
 target_link_libraries(ELooper PRIVATE
     elooper_core
+    chimera_dsp
     Ableton::Link
     juce::juce_audio_utils
     juce::juce_audio_devices
@@ -105,7 +119,7 @@ target_link_libraries(ELooper PRIVATE
 # Headless engine integration test (renders the real engine offline, no device).
 if(ELOOPER_BUILD_TESTS)
     juce_add_console_app(elooper_engine_tests PRODUCT_NAME "elooper_engine_tests")
-    file(GLOB ELOOPER_ENGINE_SOURCES CONFIGURE_DEPENDS Source/Model/*.cpp Source/Engine/*.cpp)
+    file(GLOB ELOOPER_ENGINE_SOURCES CONFIGURE_DEPENDS Source/Model/*.cpp Source/Engine/*.cpp Source/Synth/plugin/*.cpp)
     target_sources(elooper_engine_tests PRIVATE ${ELOOPER_ENGINE_SOURCES} Tests/EngineTests.cpp)
     target_compile_definitions(elooper_engine_tests PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_PLUGINHOST_VST3=0 JUCE_PLUGINHOST_LV2=0
@@ -114,7 +128,7 @@ if(ELOOPER_BUILD_TESTS)
         target_compile_definitions(elooper_engine_tests PRIVATE JUCE_PLUGINHOST_AU=1)
     endif()
     target_link_libraries(elooper_engine_tests PRIVATE
-        elooper_core Ableton::Link
+        elooper_core chimera_dsp Ableton::Link
         juce::juce_audio_utils juce::juce_audio_processors juce::juce_dsp
         juce::juce_recommended_config_flags)
     add_test(NAME engine COMMAND elooper_engine_tests)

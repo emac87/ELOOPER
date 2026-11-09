@@ -15,6 +15,17 @@ namespace {
     constexpr int kTopH = 76;        // header + buttons
     constexpr int kSlotH = 24, kSlotGap = 3;
     const char* monitorName (MonitorMode m) { return m == MonitorMode::Auto ? "Auto" : m == MonitorMode::On ? "On" : "Off"; }
+
+    // MIDI device names, cached: enumerating devices (CoreMIDI) on every strip refresh is slow.
+    juce::String midiDeviceName (const juce::String& identifier)
+    {
+        static juce::Array<juce::MidiDeviceInfo> cache;
+        static juce::uint32 cachedAt = 0;
+        const auto now = juce::Time::getMillisecondCounter();
+        if (cache.isEmpty() || now - cachedAt > 3000) { cache = juce::MidiInput::getAvailableDevices(); cachedAt = now; }
+        for (auto& d : cache) if (d.identifier == identifier) return d.name;
+        return identifier;
+    }
 }
 
 void ChannelStrip::Content::paint (juce::Graphics& g)
@@ -70,6 +81,7 @@ ChannelStrip::ChannelStrip (EngineController& c, PresetManager& p, Id id)
 
 ChannelStrip::~ChannelStrip()
 {
+    if (muteGestureOpen) controller.endParamGesture (trackId, { ParamKind::Mute, kInvalidId, -1 });
     viewport.setViewedComponent (nullptr, false);
 }
 
@@ -106,10 +118,7 @@ void ChannelStrip::updateHeader (const TrackModel& t)
                               : "In " + juce::String (t.inputChannel + 1);
     else if (t.kind == TrackKind::Instrument) {
         juce::String dev = "All MIDI";
-        if (t.midiInputDevice.isNotEmpty()) {
-            dev = t.midiInputDevice;
-            for (auto& d : juce::MidiInput::getAvailableDevices()) if (d.identifier == t.midiInputDevice) dev = d.name;
-        }
+        if (t.midiInputDevice.isNotEmpty()) dev = midiDeviceName (t.midiInputDevice);
         line1 = dev + (t.midiChannel > 0 ? " ch" + juce::String (t.midiChannel) : juce::String());
     }
     else if (t.kind == TrackKind::AuxOut) line1 = "Output " + juce::String (t.auxPair * 2 + 1) + "/" + juce::String (t.auxPair * 2 + 2);
@@ -362,10 +371,11 @@ void ChannelStrip::mouseDown (const juce::MouseEvent& e)
     if (! t || ! t->rt) return;
     switch (buttonAt (e.getPosition())) {
         case Mute: {
+            // The gesture stays open until mouse-up so automation recording sees the change.
             const ParamTarget tgt { ParamKind::Mute, kInvalidId, -1 };
             controller.beginParamGesture (trackId, tgt);
             controller.setParam (trackId, tgt, t->rt->mute.load() ? 0.0f : 1.0f);
-            controller.endParamGesture (trackId, tgt);
+            muteGestureOpen = true;
             break;
         }
         case Solo: t->rt->solo.store (! t->rt->solo.load()); break;
@@ -378,6 +388,14 @@ void ChannelStrip::mouseDown (const juce::MouseEvent& e)
         case None: break;
     }
     refreshValues();
+}
+
+void ChannelStrip::mouseUp (const juce::MouseEvent&)
+{
+    if (muteGestureOpen) {
+        muteGestureOpen = false;
+        controller.endParamGesture (trackId, { ParamKind::Mute, kInvalidId, -1 });
+    }
 }
 
 void ChannelStrip::mouseDoubleClick (const juce::MouseEvent& e)
