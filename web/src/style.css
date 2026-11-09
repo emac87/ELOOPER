@@ -84,3 +84,17 @@ body.dragging #dropHint{display:flex}
 
 #main::-webkit-scrollbar{width:12px}#main::-webkit-scrollbar-track{background:#17171b;border-radius:6px}#main::-webkit-scrollbar-thumb{background:#6a6a74;border-radius:6px}
 #main>*{flex:none}
+
+@media (max-width:560px){#kb{height:140px}}
+@media (max-width:900px) and (pointer:coarse){#kb{height:120px}}
+
+/* Phones: the top bar wraps into tidy rows instead of overlapping */
+@media (max-width:700px){
+  #top .row{flex-wrap:wrap;row-gap:6px}
+  #top .wordmark{flex:1 0 100%}
+  #top #preset{flex:1 1 55%;min-width:0;width:auto}
+  #top .row > div[style*="170px"]{flex:1 1 100%;width:auto!important}
+  #top .meterWrap{flex:1 1 auto}
+  #top button.dice{-webkit-touch-callout:none;user-select:none}
+  #macros{display:grid!important;grid-template-columns:1fr 1fr;gap:6px}
+}

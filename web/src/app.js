@@ -210,7 +210,7 @@ function buildTop() {
   const prev = el('button', '', r1, '<'); prev.title = 'Previous preset'; prev.setAttribute('aria-label', 'Previous preset');
   const sel = el('select', '', r1); sel.id = 'preset'; sel.title = 'Preset browser'; sel.setAttribute('aria-label', 'Preset');
   const next = el('button', '', r1, '>'); next.title = 'Next preset'; next.setAttribute('aria-label', 'Next preset');
-  const dice = el('button', '', r1); dice.innerHTML = DICE_SVG + 'DICE'; dice.title = 'Click: random factory preset. Shift-click: brand-new random patch.';
+  const dice = el('button', 'dice', r1); dice.innerHTML = DICE_SVG + 'DICE'; dice.title = 'Click: random factory preset. Shift-click: brand-new random patch.';
   const save = el('button', '', r1, 'Save'); save.title = 'Save the patch to this browser’s user presets';
   const exp = el('button', '', r1, 'Export'); exp.title = 'Download the patch as a .chimera.json file';
   const load = el('button', '', r1, 'Load'); load.title = 'Load a .chimera.json patch file';
@@ -227,7 +227,13 @@ function buildTop() {
   sel.addEventListener('change', () => { if (+sel.value >= 0) post({ type: 'preset', index: +sel.value }); });
   const step = d => { if (!presets.length) return; const i = (Math.max(presetIndex, 0) + d + presets.length) % presets.length; post({ type: 'preset', index: i }); };
   prev.onclick = () => step(-1); next.onclick = () => step(1);
-  dice.onclick = e => post({ type: e.shiftKey ? 'randomPatch' : 'randomPreset' });
+  // Shift-click (or a long press on a phone) makes a brand-new random patch.
+  let diceHold = null, diceLong = false;
+  dice.addEventListener('pointerdown', () => { diceLong = false; diceHold = setTimeout(() => { diceLong = true; post({ type: 'randomPatch' }); }, 550); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => dice.addEventListener(t, () => clearTimeout(diceHold)));
+  dice.addEventListener('contextmenu', e => e.preventDefault());
+  dice.onclick = e => { if (diceLong) { diceLong = false; return; } post({ type: e.shiftKey ? 'randomPatch' : 'randomPreset' }); };
+  dice.title = 'Click: random preset. Shift-click or long-press: brand-new random patch.';
   panic.onclick = () => { post({ type: 'panic' }); heldClear(); };
   save.onclick = () => {
     if (!patch) return; const name = (window.prompt && window.prompt('Preset name', patch.name || 'My Patch')) || null; if (!name) return;
@@ -613,6 +619,7 @@ function pageFx(m) {
 let kbBase = 60, kbVel = 100, held = {}; const keyEls = {};
 function midiOut(a) { if (node) post({ type: 'midi', data: a }); }
 function vis(n, on) { const k = keyEls[n]; if (k) k.classList.toggle('down', on); }
+var kbOctaves = 4;
 function noteOn(src, n) { if (n < 0 || n > 127) return; if (held[src] === n) return; if (held[src] != null) noteOff(src); held[src] = n; vis(n, true); midiOut([0x90, n, kbVel]); }
 function noteOff(src) { const n = held[src]; if (n == null) return; delete held[src]; if (!Object.values(held).includes(n)) vis(n, false); midiOut([0x80, n, 0]); }
 function heldClear() { Object.keys(held).forEach(k => vis(held[k], false)); held = {}; }
@@ -634,9 +641,12 @@ function buildKeys() {
   const kb = el('div', '', f); kb.id = 'kb'; kb.setAttribute('aria-label', 'On-screen keyboard');
   function rebuild() {
     kb.innerHTML = ''; Object.keys(keyEls).forEach(k => delete keyEls[k]);
-    const start = kbBase - 12, W = 28; let wi = 0; oc.textContent = noteName(start) + ' – ' + noteName(start + 47);
+    // fewer, bigger keys on narrow screens (phones): 2 octaves under 560 px, 3 under 900, else 4
+    const w = kb.clientWidth || window.innerWidth, oct = w < 560 ? 2 : w < 900 ? 3 : 4;
+    kbOctaves = oct;
+    const start = kbBase - 12, W = 7 * oct; let wi = 0; oc.textContent = noteName(start) + ' – ' + noteName(start + oct * 12 - 1);
     const blacks = [];
-    for (let n = start; n < start + 48; n++) {
+    for (let n = start; n < start + oct * 12; n++) {
       const pc = n % 12, black = [1, 3, 6, 8, 10].includes(pc);
       if (!black) { const k = el('div', 'key' + (pc === 0 ? ' c' : ''), kb); k.style.left = wi / W * 100 + '%'; k.style.width = 100 / W + '%'; k.dataset.note = n; if (pc === 0) k.dataset.n = noteName(n); keyEls[n] = k; wi++; }
       else blacks.push([n, wi]);
@@ -645,6 +655,10 @@ function buildKeys() {
     Object.values(held).forEach(n => vis(n, true));
   }
   rebuild();
+  let resizeT = null;
+  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => {
+    const w = kb.clientWidth || window.innerWidth, oct = w < 560 ? 2 : w < 900 ? 3 : 4;
+    if (oct !== kbOctaves) rebuild(); }, 150); });
   const octave = d => { heldClear(); Object.keys(held).forEach(s => noteOff(s)); kbBase = clamp(kbBase + d * 12, 24, 96); rebuild(); };
   dn.onclick = () => octave(-1); up.onclick = () => octave(1); buildKeys.octave = octave;
   const ptr = {};
@@ -718,9 +732,35 @@ function onMsg(ev) {
 }
 
 /* ---------- audio start ---------- */
+// ---- making sure sound actually comes out ----
+// iPhone/iPad: Web Audio is muted by the silent switch unless the page also plays an <audio>
+// element, and every browser only lets audio start inside a tap/click. So on every gesture we
+// (re)start a silent looping <audio> element, ask for the "playback" audio session, and resume
+// the AudioContext synchronously, before any await.
+var silentEl = null;
+function silentWavUrl() {
+  const n = 4000, b = new DataView(new ArrayBuffer(44 + n * 2));
+  const str = (o, t) => { for (let i = 0; i < t.length; ++i) b.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); b.setUint32(4, 36 + n * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true); b.setUint32(24, 8000, true);
+  b.setUint32(28, 16000, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); str(36, 'data'); b.setUint32(40, n * 2, true);
+  let bin = ''; const u = new Uint8Array(b.buffer); for (let i = 0; i < u.length; ++i) bin += String.fromCharCode(u[i]);
+  return 'data:audio/wav;base64,' + btoa(bin);
+}
+function unlockAudio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+  try {
+    if (!silentEl) { silentEl = new Audio(silentWavUrl()); silentEl.loop = true; silentEl.setAttribute('playsinline', ''); silentEl.volume = 0.01; }
+    if (silentEl.paused) { const pr = silentEl.play(); if (pr && pr.catch) pr.catch(() => {}); }
+  } catch (e) {}
+  if (audioCtx && audioCtx.state !== 'running') { try { const pr = audioCtx.resume(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} }
+}
+['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, () => { if (audioCtx) unlockAudio(); }, true));
+
 async function startAudio() {
   if (node || blockedShown) return;
   const AC = window.AudioContext || window.webkitAudioContext; audioCtx = new AC({ latencyHint: 'interactive' });
+  unlockAudio();   // inside the click, before any await
   try {
     node = await window.ChimeraAudio.create(audioCtx, onMsg);
     node.port.onmessage = onMsg; node.connect(audioCtx.destination);
