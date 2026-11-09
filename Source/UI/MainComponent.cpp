@@ -41,6 +41,7 @@ MainComponent::MainComponent (EngineController& c, MidiMapping& mm, PresetManage
     timeline = std::make_unique<TimelineView> (controller, selection);
     mixer = std::make_unique<MixerPanel> (controller, selection, presets);
     automation = std::make_unique<AutomationPanel> (controller, selection);
+    automation->onClose = [this] { setDock (Dock::Automation, false); };
     editor = std::make_unique<MidiEditor> (controller, selection);
 
     midiMap.selectedLoopProvider = [this] { return selection.loopId; };
@@ -56,7 +57,7 @@ MainComponent::MainComponent (EngineController& c, MidiMapping& mm, PresetManage
     transport.onSettings = [this] { showSettingsWindow (controller, midiMap); };
     loopGrid.onEditLoop = [this] (Id track, Id loop, bool midi) {
         selection.select (track, loop);
-        setDock (midi ? Dock::Editor : Dock::Automation, true);
+        if (midi) setDock (Dock::Editor, true);
     };
 
     // commands, menu, shortcuts
@@ -137,6 +138,7 @@ void MainComponent::relayout()   // rebuilds the layout items (page / dock visib
         auto* d = dockComponent (i);
         d->setVisible (dockVisible[i]);
         dockItemIndex[i] = -1;
+        if (i == (int) Dock::Automation) continue;   // an overlay, placed by applyLayout()
         if (! dockVisible[i]) continue;
         layout.setItemLayout (n, barThickness, barThickness, barThickness);
         bars[i] = std::make_unique<juce::StretchableLayoutResizerBar> (&layout, n, false);
@@ -161,6 +163,13 @@ void MainComponent::applyLayout()
     r.removeFromTop (menuBarHeight);
 #endif
     layout.layOutComponents (layoutComps, layoutCount, r.getX(), r.getY(), r.getWidth(), r.getHeight(), true, true);
+
+    // The automation layer sits on top of everything below the transport bar (page, mixer and
+    // editor), see-through so the loops / notes / strips underneath stay visible.
+    if (automation != nullptr && automation->isVisible()) {
+        automation->setBounds (r);
+        automation->toFront (false);
+    }
 }
 
 void MainComponent::resized()

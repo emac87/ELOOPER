@@ -12,7 +12,7 @@ TrackHeader::TrackHeader (EngineController& c, Selection& s, PresetManager& p, I
     icon->interactive = false;                 // the loop page has no controls: just the type icon
     icon->setInterceptsMouseClicks (false, false);
     addAndMakeVisible (*icon);
-    setTooltip ("Click: select. Double-click: rename. Right-click: track menu. Drag up / down: reorder.");
+    setTooltip ("Click: select. Double-click: rename. Right-click: track menu. Drag sideways: reorder.");
     setSize (width, rowHeight);
     refresh();
 }
@@ -49,8 +49,8 @@ void TrackHeader::refresh()
 
 void TrackHeader::resized()
 {
-    icon->setBounds (12, 10, 26, 26);
-    folderR = numOuts > 0 ? juce::Rectangle<int> (12, getHeight() - 30, getWidth() - 20, 22) : juce::Rectangle<int>();
+    icon->setBounds (6, 11, 24, 24);
+    folderR = numOuts > 0 ? juce::Rectangle<int> (5, getHeight() - 25, getWidth() - 10, 20) : juce::Rectangle<int>();
 }
 
 void TrackHeader::paint (juce::Graphics& g)
@@ -59,8 +59,8 @@ void TrackHeader::paint (juce::Graphics& g)
     g.setColour (theme::panel);
     g.fillRoundedRectangle (b, 6.0f);
     {
-        juce::Path p;
-        p.addRoundedRectangle (b.getX(), b.getY(), 6.0f, b.getHeight(), 6.0f, 6.0f, true, false, true, false);
+        juce::Path p;   // colour stripe along the top
+        p.addRoundedRectangle (b.getX(), b.getY(), b.getWidth(), 5.0f, 6.0f, 6.0f, true, true, false, false);
         g.setColour (colour);
         g.fillPath (p);
     }
@@ -68,12 +68,14 @@ void TrackHeader::paint (juce::Graphics& g)
     g.setColour (sel ? (selection.loopId == kInvalidId ? juce::Colours::white : colour.withAlpha (0.8f)) : theme::outline);
     g.drawRoundedRectangle (b, 6.0f, sel ? 1.5f : 1.0f);
 
+    const int w = getWidth();
     g.setColour (theme::text);
-    g.setFont (theme::font (14.5f, true));
-    g.drawFittedText (nameText, 44, 8, getWidth() - 50, 34, juce::Justification::centredLeft, 2, 0.9f);
+    g.setFont (theme::font (13.0f, true));
+    g.drawFittedText (nameText, 34, 8, w - 38, 30, juce::Justification::centredLeft, 2, 0.85f);
     g.setColour (theme::textDim);
-    g.setFont (theme::font (11.5f));
-    g.drawText (line1, 12, 44, getWidth() - 20, 14, juce::Justification::centredLeft, true);
+    g.setFont (theme::font (11.0f));
+    const int lineY = folderR.isEmpty() ? 44 : 40;
+    g.drawFittedText (line1, 6, lineY, w - 10, folderR.isEmpty() ? 44 : 30, juce::Justification::topLeft, folderR.isEmpty() ? 3 : 2, 0.9f);
 
     if (! folderR.isEmpty()) {
         auto r = folderR.toFloat();
@@ -82,8 +84,8 @@ void TrackHeader::paint (juce::Graphics& g)
         g.setColour (theme::outline);
         g.drawRoundedRectangle (r, 4.0f, 1.0f);
         g.setColour (theme::accent);
-        g.setFont (theme::font (12.0f, true));
-        g.drawText (juce::String (folderOpen ? "Hide " : "Show ") + juce::String (numOuts) + " outputs", folderR, juce::Justification::centred);
+        g.setFont (theme::font (11.5f, true));
+        g.drawText (juce::String (folderOpen ? "Hide " : "Show ") + juce::String (numOuts) + " outs", folderR, juce::Justification::centred);
     }
 }
 
@@ -102,7 +104,7 @@ void TrackHeader::mouseDown (const juce::MouseEvent& e)
 void TrackHeader::mouseDrag (const juce::MouseEvent& e)
 {
     if (e.mods.isPopupMenu() || folderR.contains (e.getMouseDownPosition()) || ! onReorderDrop) return;
-    if (! dragging && std::abs (e.getDistanceFromDragStartY()) > 10) {
+    if (! dragging && std::abs (e.getDistanceFromDragStartX()) > 10) {
         dragging = true;
         setMouseCursor (juce::MouseCursor::DraggingHandCursor);
         setAlpha (0.6f);

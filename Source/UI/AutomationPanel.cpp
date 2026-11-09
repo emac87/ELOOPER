@@ -61,7 +61,9 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.setColour (theme::panelRaised);
+        g.setColour (theme::background.withAlpha (0.55f));
+        g.fillRect (getLocalBounds().withTrimmedLeft (kHeaderWidth));
+        g.setColour (theme::panelRaised.withAlpha (0.92f));
         g.fillRect (0, 0, kHeaderWidth, getHeight());
         g.setColour (theme::outline);
         g.drawRect (getLocalBounds());
@@ -82,13 +84,14 @@ public:
         view.setBounds (getLocalBounds().withTrimmedLeft (kHeaderWidth));
     }
 
-    void update (const AutomationLane& l, double len, int bpb, juce::Colour col, bool pencil)
+    void update (const AutomationLane& l, double len, int bpb, juce::Colour col, bool pencil, bool eraser)
     {
         view.setLane (l);
         view.setLengthBeats (len);
         view.setBeatsPerBar (bpb);
         view.setColour (col);
         view.setPencil (pencil);
+        view.setEraser (eraser);
         enable.setToggleState (l.enabled, juce::dontSendNotification);
         target = l.target;
         updateValue();
@@ -146,9 +149,25 @@ AutomationPanel::AutomationPanel (EngineController& c, Selection& s) : controlle
     }
     loopLayerButton.onClick = [this] { useTrackLanes = false; dirty = true; ticksSinceRefresh = 100; refresh(); };
     trackLanesButton.onClick = [this] { useTrackLanes = true; dirty = true; ticksSinceRefresh = 100; refresh(); };
+    setOpaque (false);
+    viewport.setOpaque (false);
     pencilButton.setTooltip ("Pencil: drag to draw points freehand");
-    pencilButton.onClick = [this] { dirty = true; };
+    pencilButton.onClick = [this] { if (pencilButton.getToggleState()) eraserButton.setToggleState (false, juce::dontSendNotification); dirty = true; };
     addAndMakeVisible (pencilButton);
+    eraserButton.setTooltip ("Eraser: drag across a lane to remove its points");
+    eraserButton.onClick = [this] { if (eraserButton.getToggleState()) pencilButton.setToggleState (false, juce::dontSendNotification); dirty = true; };
+    addAndMakeVisible (eraserButton);
+    writeButton.setClickingTogglesState (true);
+    writeButton.setTooltip ("Write (record arm): while on, moving any control on this loop's channel writes it into the "
+                            "loop's automation as the loop plays. (Recording or overdubbing a loop always writes.)");
+    writeButton.setColour (juce::TextButton::buttonOnColourId, theme::record);
+    writeButton.onClick = [this] {
+        controller.setAutomationWriteLoop (writeButton.getToggleState() && owner.loopId != kInvalidId ? owner.loopId : kInvalidId);
+    };
+    addAndMakeVisible (writeButton);
+    closeButton.setTooltip ("Hide the automation layer");
+    closeButton.onClick = [this] { if (onClose) onClose(); };
+    addAndMakeVisible (closeButton);
     addLaneButton.onClick = [this] { showAddMenu(); };
     addAndMakeVisible (addLaneButton);
 
@@ -203,6 +222,8 @@ void AutomationPanel::timerCallback()
         r->getView().setPlayhead (beat, vis);
         r->updateValue();
     }
+    const bool w = owner.loopId != kInvalidId && controller.automationWriteLoop() == owner.loopId;
+    if (writeButton.getToggleState() != w) writeButton.setToggleState (w, juce::dontSendNotification);
 }
 
 void AutomationPanel::resolveOwner()
@@ -225,6 +246,7 @@ void AutomationPanel::resolveOwner()
     title = juce::String (juce::CharPointer_UTF8 ("Automation \xe2\x80\x94 ")) + tr->name + " / "
             + (owner.loopId != kInvalidId ? loop->name : juce::String ("Track (timeline)"));
     const bool showToggle = loop != nullptr;
+    writeButton.setEnabled (owner.loopId != kInvalidId);
     loopLayerButton.setVisible (showToggle);
     trackLanesButton.setVisible (showToggle);
     loopLayerButton.setColour (juce::TextButton::buttonColourId, ! useTrackLanes ? theme::accent.darker (0.4f) : theme::panelRaised);
@@ -282,7 +304,7 @@ void AutomationPanel::updateRows()
     const double len = laneLength();
     const int bpb = controller.session().transport.beatsPerBar;
     for (size_t i = 0; i < lanes->size() && i < container->rows.size(); ++i)
-        container->rows[i]->update ((*lanes)[i], len, bpb, titleColour, pencilButton.getToggleState());
+        container->rows[i]->update ((*lanes)[i], len, bpb, titleColour, pencilButton.getToggleState(), eraserButton.getToggleState());
 }
 
 void AutomationPanel::layoutRows()
@@ -294,9 +316,14 @@ void AutomationPanel::resized()
 {
     auto b = getLocalBounds();
     auto top = b.removeFromTop (kTopBar).reduced (4, 4);
-    addLaneButton.setBounds (top.removeFromRight (96));
+    closeButton.setBounds (top.removeFromRight (70));
+    top.removeFromRight (10);
+    addLaneButton.setBounds (top.removeFromRight (90));
     top.removeFromRight (6);
-    pencilButton.setBounds (top.removeFromRight (90));
+    writeButton.setBounds (top.removeFromRight (70));
+    top.removeFromRight (6);
+    eraserButton.setBounds (top.removeFromRight (86));
+    pencilButton.setBounds (top.removeFromRight (82));
     top.removeFromRight (6);
     if (trackLanesButton.isVisible())
     {
@@ -309,7 +336,12 @@ void AutomationPanel::resized()
 
 void AutomationPanel::paint (juce::Graphics& g)
 {
-    g.fillAll (theme::panel);
+    // See-through layer: the page underneath stays visible.
+    g.fillAll (theme::background.withAlpha (0.6f));
+    g.setColour (theme::panel.withAlpha (0.95f));
+    g.fillRect (0, 0, getWidth(), kTopBar);
+    g.setColour (theme::outline);
+    g.fillRect (0, kTopBar - 1, getWidth(), 1);
     g.setColour (titleColour);
     g.fillRect (0, 0, 3, kTopBar);
     g.setFont (theme::font (17.0f, true));
@@ -324,7 +356,7 @@ void AutomationPanel::paint (juce::Graphics& g)
         g.setColour (theme::textDim);
         g.setFont (theme::font (15.0f));
         g.drawFittedText (ownerValid
-            ? "Automation is recorded into a loop's layer whenever you move a control on its channel while that loop is recording or overdubbing."
+            ? "No lanes yet. Click + Lane to add one and draw it, or turn on Write and move a control on this loop's channel while the loop plays (recording or overdubbing a loop always writes)."
             : "Select a track or a loop to edit its automation.",
             getLocalBounds().withTrimmedTop (kTopBar).reduced (24, 8), juce::Justification::centred, 3);
     }

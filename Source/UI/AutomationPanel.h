@@ -1,6 +1,7 @@
 #pragma once
-// Show/hide-able automation section: lanes for the selected loop's automation layer, or
-// the selected track's timeline lanes.
+// The automation layer: a see-through overlay shown on top of the loops, piano roll or mixer
+// (toggled by the Automation button). Lanes for the selected loop's automation layer, or the
+// selected track's timeline lanes, with + Lane, Pencil, Eraser, Write (record arm) and Close.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
 #include "UI/Selection.h"
@@ -17,6 +18,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    std::function<void()> onClose;   // the overlay's Close button
 
 private:
     class LaneRow;
@@ -26,8 +28,10 @@ private:
     Selection& selection;
 
     juce::TextButton loopLayerButton { "Loop layer" }, trackLanesButton { "Track lanes" };
-    juce::ToggleButton pencilButton { "Pencil" };
+    juce::ToggleButton pencilButton { "Pencil" }, eraserButton { "Eraser" };
+    juce::TextButton writeButton { "Write" };
     juce::TextButton addLaneButton { "+ Lane" };
+    juce::TextButton closeButton { "Close" };
     juce::Viewport viewport;
     std::unique_ptr<Container> container;
 

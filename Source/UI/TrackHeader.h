@@ -1,8 +1,8 @@
 #pragma once
-// The label at the left of each loop-page row: colour stripe, track icon, name and input. No mixer
-// controls (those live on the mixer). Click selects, double-click renames, right-click opens the
-// track menu, drag up / down reorders. A multi-out instrument shows an "outs" toggle that folds
-// its outputs and sum folder away.
+// The label under each loop-page column (pinned along the bottom of the screen): colour stripe,
+// track icon, name and input. No mixer controls (those live on the mixer). Click selects,
+// double-click renames, right-click opens the track menu, drag sideways reorders. A multi-out
+// instrument shows an "outs" toggle that folds its outputs and sum folder away.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
 #include "Engine/PresetManager.h"
@@ -16,8 +16,8 @@ class PluginIconButton;
 
 class TrackHeader : public juce::Component, public juce::SettableTooltipClient {
 public:
-    static constexpr int rowHeight = 96;
-    static constexpr int defaultWidth = 176;
+    static constexpr int rowHeight = 96;      // label height
+    static constexpr int defaultWidth = 96;   // = loop cell width
 
     TrackHeader (EngineController&, Selection&, PresetManager&, Id trackId, int width = defaultWidth);
     ~TrackHeader() override;

@@ -670,7 +670,9 @@ void EngineController::recordAutomation() {
         for (auto& l : t->loops) {
             if (! l->rt) continue;
             const auto st = l->rt->uiState.load();
-            if (st != LoopState::Recording && st != LoopState::Overdubbing) continue;
+            const bool writing = st == LoopState::Recording || st == LoopState::Overdubbing
+                              || (l->id == autoWriteLoop && st == LoopState::Playing);
+            if (! writing) continue;
             const double phase = l->rt->uiPhaseBeats.load();
             auto it = std::find_if (l->automation.begin(), l->automation.end(), [&] (const AutomationLane& a) { return a.target == g.target; });
             if (it == l->automation.end()) { AutomationLane lane; lane.target = g.target; l->automation.push_back (lane); it = l->automation.end() - 1; }
@@ -689,7 +691,12 @@ void EngineController::recordAutomation() {
             notify (Change::Automation, t->id);
         }
         g.lastPhase = 0;
-        for (auto& l : t->loops) if (l->rt && (l->rt->uiState.load() == LoopState::Recording || l->rt->uiState.load() == LoopState::Overdubbing)) g.lastPhase = l->rt->uiPhaseBeats.load();
+        for (auto& l : t->loops) {
+            if (! l->rt) continue;
+            const auto st = l->rt->uiState.load();
+            if (st == LoopState::Recording || st == LoopState::Overdubbing || (l->id == autoWriteLoop && st == LoopState::Playing))
+                g.lastPhase = l->rt->uiPhaseBeats.load();
+        }
     }
 }
 

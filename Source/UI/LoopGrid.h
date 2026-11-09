@@ -1,9 +1,10 @@
 #pragma once
-// The main black loop screen: a scene bar on top (Stop all + one launch button per loop column),
-// then one row per track (a slim name label, its loops, and "+" to add a loop), and "+ Add Track".
-// All mixer controls live on the mixer.
-// Multi-out instruments show their outputs and sum folder indented under them (collapsible).
-// Plain buses live on the mixer only (they appear here only if they hold loops).
+// The main black loop screen. Each track is a column: its label is pinned along the bottom of
+// the screen and its loops are stacked above it (loop 1 at the top), with "+" under the last
+// loop. Scenes run down the left side: Scene N plays row N (the N-th loop of every track) and
+// stops the rest; "Stop all" sits in the bottom-left corner beside the labels. A multi-out
+// instrument's outputs and sum folder are columns right after it (foldable). Plain buses are on
+// the mixer only. The labels and scene buttons scroll together with the loops.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
 #include "Engine/MidiMapping.h"
@@ -25,18 +26,18 @@ public:
     LoopGrid (EngineController&, Selection&, MidiMapping&, PresetManager&);
     ~LoopGrid() override;
 
-    // (trackId, loopId, midiEditor): double-click on a MIDI / automation loop, or the "Edit" menu items.
+    // (trackId, loopId, midiEditor): double-click on a MIDI loop, or the "Edit" menu items.
     std::function<void (Id, Id, bool)> onEditLoop;
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    // Opens the "add track" menu (also used by the Track menu); anchored to the "+ Add Track" button.
     void showAddTrackMenu();
 
 private:
-    class Row;
-    class SceneBar;
+    class Column;
+    class SceneButtons;
+    class SyncViewport;
     struct Content : public juce::Component { void paint (juce::Graphics&) override {} };
 
     void timerCallback() override;
@@ -45,21 +46,30 @@ private:
 
     void rebuild();
     void layoutContent();
+    void syncFrom (juce::Viewport* source);
     void reorderDrop (Id trackId, const juce::MouseEvent&);
     void updateSceneLight();
+    void learnMenu (MappingTarget::Kind, int scene, juce::Component* target);
 
     EngineController& controller;
     Selection& selection;
     MidiMapping& midiMap;
     PresetManager& presets;
 
-    juce::Viewport viewport;
-    Content content;
-    std::vector<std::unique_ptr<Row>> rows;
-    juce::TextButton addTrackButton { "+ Add Track" };
-    std::unique_ptr<SceneBar> sceneBar;
+    std::unique_ptr<SyncViewport> gridView, labelView, sceneView;
+    Content gridContent, labelContent, sceneContent;
+    std::vector<std::unique_ptr<Column>> columns;
+    std::vector<std::unique_ptr<TrackHeader>> labels;
+    std::unique_ptr<SceneButtons> scenes;
+    juce::TextButton addTrackButton { "+ Track" };
+    struct ClickButton : public juce::TextButton {
+        using juce::TextButton::TextButton;
+        std::function<void (bool popup)> onAnyClick;
+        void clicked (const juce::ModifierKeys& m) override { if (onAnyClick) onAnyClick (m.isPopupMenu()); }
+    };
+    ClickButton stopAllButton { "Stop all" };
 
-    bool needsRebuild = true;
+    bool needsRebuild = true, syncing = false;
     int tick = 0;
 };
 

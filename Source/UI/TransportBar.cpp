@@ -146,7 +146,7 @@ TransportBar::TransportBar (EngineController& c) : controller (c)
     }
     pageButtons[0].setToggleState (true, juce::dontSendNotification);
 
-    const char* dockNames[] = { "Mixer", "Auto", "Editor" };
+    const char* dockNames[] = { "Mixer", "Automation", "Editor" };
     const char* dockTips[] = { "Show / hide mixer (M)", "Show / hide automation (A)", "Show / hide MIDI editor (E)" };
     for (int i = 0; i < 3; ++i) {
         auto& b = dockButtons[i];
@@ -191,12 +191,13 @@ void TransportBar::resized()
 
     // right cluster (right-aligned): settings, cpu (optional), docks, pages
     settingsButton.setBounds (right - gearSize, (h - gearSize) / 2, gearSize, gearSize); right -= gearSize + 10;
-    const int pagesW = 3 * pageW + 2 * 2, docksW = 3 * dockW + 2 * 2;
+    const int dockWs[3] = { dockW, dockW + 40, dockW };   // "Automation" is wider
+    const int pagesW = 3 * pageW + 2 * 2, docksW = dockWs[0] + dockWs[1] + dockWs[2] + 2 * 2;
     const int leftLimitNeeded = m + playW + gap + posW + gap + tempoW + gap + tapW + gap + sigW + gap
                                 + masterLblW + masterW + gap + metroW + gap + linkW + gap + arrW;
     const bool showCpu = right - (pagesW + docksW + 10 + cpuW + 10) > leftLimitNeeded;
     if (showCpu) { cpuR = { right - cpuW, by, cpuW, bh }; right -= cpuW + 10; } else cpuR = {};
-    for (int i = 2; i >= 0; --i) { dockButtons[i].setBounds (right - dockW, by, dockW, bh); right -= dockW + (i > 0 ? 2 : 0); }
+    for (int i = 2; i >= 0; --i) { dockButtons[i].setBounds (right - dockWs[i], by, dockWs[i], bh); right -= dockWs[i] + (i > 0 ? 2 : 0); }
     right -= 10;
     for (int i = 2; i >= 0; --i) { pageButtons[i].setBounds (right - pageW, by, pageW, bh); right -= pageW + (i > 0 ? 2 : 0); }
     right -= 14;

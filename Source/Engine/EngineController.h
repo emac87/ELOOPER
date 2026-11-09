@@ -157,6 +157,11 @@ public:
     void deleteTake (Id loopId, int take);
     void stopAllLoops();
 
+    // Automation write: while set, moving a control writes into this loop's automation layer
+    // whenever it plays (not only while it records or overdubs). kInvalidId = off.
+    void setAutomationWriteLoop (Id loopId) { autoWriteLoop = loopId; }
+    Id automationWriteLoop() const noexcept { return autoWriteLoop; }
+
     // Scenes (Ableton-style): scene N is the N-th loop of every track (automation loops are not
     // counted). Launching it plays those loops and stops every other loop, each quantised by its
     // own settings. Empty slots stay empty, and loops that are recording are left alone.
@@ -249,6 +254,7 @@ private:
     TrackPtr makeTrack (TrackKind kind, const juce::String& name, Id forcedId = kInvalidId);
     void removeSendInternal (TrackModel& t, int index);
     void recordAutomation();
+    Id autoWriteLoop = kInvalidId;
     void recordArrangement();
     void preparePlugin (PluginSlot& slot, std::unique_ptr<juce::AudioPluginInstance> inst);
     std::vector<PluginSlotPtr>* chainOf (TrackModel& t, FxChain c);

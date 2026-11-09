@@ -199,7 +199,7 @@ void AutomationLaneView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    if (hit >= 0)
+    if (hit >= 0 && ! eraser)
     {
         mode = Mode::Point; dragIndex = hit;
         if (! isSelected (hit)) selected.clear();
@@ -227,6 +227,15 @@ void AutomationLaneView::mouseDown (const juce::MouseEvent& e)
     }
 
     selected.clear();
+    if (eraser)
+    {
+        // Eraser: drag across the lane to remove every point in that span.
+        mode = Mode::Erase;
+        eraseFrom = std::clamp (xToBeat (pos.x), 0.0, lengthBeats);
+        if (hit >= 0) lane.points.erase (lane.points.begin() + hit);
+        repaint();
+        return;
+    }
     if (pencil)
     {
         mode = Mode::Pencil;
@@ -279,6 +288,17 @@ void AutomationLaneView::mouseDrag (const juce::MouseEvent& e)
             bandNow = e.getPosition();
             repaint();
             break;
+        case Mode::Erase:
+        {
+            const double b = std::clamp (xToBeat (pos.x), 0.0, lengthBeats);
+            const double lo = std::min (eraseFrom, b), hi = std::max (eraseFrom, b);
+            lane.points.erase (std::remove_if (lane.points.begin(), lane.points.end(),
+                                               [lo, hi] (const AutoPoint& p) { return p.beat >= lo && p.beat <= hi; }),
+                               lane.points.end());
+            eraseFrom = b;
+            repaint();
+            break;
+        }
         case Mode::None: break;
     }
 }
@@ -296,7 +316,7 @@ void AutomationLaneView::mouseUp (const juce::MouseEvent& e)
                 selected.push_back (i);
         repaint();
     }
-    else if (m == Mode::Point || m == Mode::Curve || m == Mode::Pencil)
+    else if (m == Mode::Point || m == Mode::Curve || m == Mode::Pencil || m == Mode::Erase)
     {
         commit();
         repaint();

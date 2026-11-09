@@ -16,6 +16,7 @@ public:
     void setBeatsPerBar (int bpb);
     void setColour (juce::Colour c) { colour = c; repaint(); }
     void setPencil (bool on) { pencil = on; }
+    void setEraser (bool on) { eraser = on; }
     void setPlayhead (double beat, bool visible);
     bool isInteracting() const noexcept { return mode != Mode::None; }
 
@@ -27,7 +28,7 @@ public:
     bool keyPressed (const juce::KeyPress&) override;
 
 private:
-    enum class Mode { None, Point, Curve, Pencil, Band };
+    enum class Mode { None, Point, Curve, Pencil, Band, Erase };
 
     EngineController& controller;
     AutomationOwner owner;
@@ -37,6 +38,8 @@ private:
     int beatsPerBar = 4;
     juce::Colour colour { theme_accent() };
     bool pencil = false;
+    bool eraser = false;
+    double eraseFrom = 0;
     double playBeat = 0;
     bool playVisible = false;
 

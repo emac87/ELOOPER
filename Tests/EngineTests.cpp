@@ -316,6 +316,38 @@ static void testScenes() {
     CHECK (c.loopStatus (empty2).state == LoopState::Empty);   // never starts recording
 }
 
+// Automation "Write": with the loop armed for writing, moving a control while the loop just
+// plays writes a lane into its automation layer; with it off, nothing is written.
+static void testAutomationWrite() {
+    std::printf ("automation write\n");
+    Offline o;
+    auto& c = o.c;
+    const Id inst = firstTrack (c, TrackKind::Instrument);
+    const Id loop = c.addLoop (inst, LoopType::Midi);
+    MidiClip clip; clip.lengthBeats = 4; clip.notes.push_back ({ 0, 1, 60, 100, 1, false });
+    c.setMidiClip (loop, clip);
+    o.run (0.05, false);
+    c.playLoop (loop);
+    o.run (2.5, false);
+    CHECK (c.loopStatus (loop).state == LoopState::Playing);
+    const ParamTarget vol { ParamKind::Volume, kInvalidId, -1 };
+    AutomationOwner owner; owner.trackId = inst; owner.loopId = loop;
+
+    c.beginParamGesture (inst, vol);   // not armed: nothing written
+    for (int i = 0; i < 10; ++i) { c.setParam (inst, vol, 0.3f + 0.02f * (float) i); o.run (0.05, false); }
+    c.endParamGesture (inst, vol);
+    const auto* lanes = c.automationLanes (owner);
+    CHECK (lanes == nullptr || lanes->empty());
+
+    c.setAutomationWriteLoop (loop);
+    c.beginParamGesture (inst, vol);
+    for (int i = 0; i < 10; ++i) { c.setParam (inst, vol, 0.3f + 0.02f * (float) i); o.run (0.05, false); }
+    c.endParamGesture (inst, vol);
+    lanes = c.automationLanes (owner);
+    CHECK (lanes != nullptr && lanes->size() == 1 && ! (*lanes)[0].points.empty());
+    c.setAutomationWriteLoop (kInvalidId);
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     testRecordLoopAndAutoMute();
@@ -326,6 +358,7 @@ int main() {
     testSaveLoadRoundTrip();
     testMultiOutSumFolder();
     testScenes();
+    testAutomationWrite();
     std::printf (failures == 0 ? "engine tests passed\n" : "%d engine check(s) FAILED\n", failures);
     return failures == 0 ? 0 : 1;
 }

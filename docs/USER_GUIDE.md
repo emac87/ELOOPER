@@ -45,12 +45,12 @@ The **transport bar** across the top holds:
 - **Link** toggle, with the number of Link peers, and a start/stop sync toggle. See [Ableton Link](#ableton-link).
 - **Arrangement record** toggle. See [Timeline and arrangement record](#timeline-and-arrangement-record).
 - **Pages**: **Loops**, **Timeline** and **Bounced**.
-- **Docks**: **Mixer**, **Auto** (automation) and **Editor** (the MIDI editor). Each dock opens below the page. Drag the bar between the page and a dock to resize it.
+- **Docks**: **Mixer** and **Editor** (the MIDI editor) open below the page; drag the bar between the page and a dock to resize it. **Automation** opens the automation layer on top of everything (see [Automation](#automation)).
 - **Settings** and a CPU readout.
 
-The **Loops** page is the main screen. It has no mixer controls, only loops. Each track is a row: a slim label on the left, then the track's loops as cells to the right. Click a cell to select it. Plain buses are shown on the mixer only (a bus that holds loops still appears at the bottom of the Loops page). All levels, effects, sends and routing are on the **Mixer** dock.
+The **Loops** page is the main screen. It has no mixer controls, only loops. Each track is a column: its label is pinned along the bottom of the screen and its loops are stacked above it, loop 1 at the top, with **+** under the last one. Click a cell to select it. **+ Track** at the end of the labels adds a track. Plain buses are shown on the mixer only (a bus that holds loops still appears as a column). All levels, effects, sends and routing are on the **Mixer** dock. The labels and scene buttons scroll together with the loops.
 
-**Scenes:** the bar at the top has **Stop all** and one **Scene** button above each column of loops. **Scene 1** plays the first loop of every track and stops every other loop. **Scene 2** does the same with the second loop, and so on. Each loop starts and stops on its own quantise setting (the next bar by default). A track whose slot in that column is empty goes silent. A loop that is recording is left alone. The scene button lights up while its loops are the ones playing. Right-click a Scene button (or **Stop all**) for **MIDI Learn**.
+**Scenes:** the **Scene** buttons run down the left side, one per row of loops. **Scene 1** plays the top row (the first loop of every track) and stops every other loop. **Scene 2** does the same with the second row, and so on. Each loop starts and stops on its own quantise setting (the next bar by default). A track whose slot in that row is empty goes silent. A loop that is recording is left alone. The scene button lights up while its row is the one playing. **Stop all** sits in the bottom-left corner, beside the labels. Right-click a Scene button or **Stop all** for **MIDI Learn**.
 
 ## Tracks
 
@@ -70,7 +70,7 @@ A new session starts with one audio track and one instrument track.
 
 **Adding loops:** each track row ends with a **+** button. It adds an audio loop (MIDI loop on instrument tracks). Automation loops are hidden for now; automation will come back in a different form.
 
-**Track label:** the label at the left of each row shows the track's colour, its type icon (synth, drums, sampler, EQ and so on, or the channel type), its name and its input (or instrument). Click it to select the track, double-click to rename it, right-click for the track menu, and drag it up or down to reorder tracks. A multi-out instrument has a **Show / Hide outputs** button.
+**Track label:** the label under each column shows the track's colour, its type icon (synth, drums, sampler, EQ and so on, or the channel type), its name and its input (or instrument). Click it to select the track, double-click to rename it, right-click for the track menu, and drag it sideways to reorder tracks. A multi-out instrument has a **Show / Hide outs** button; its outputs and Sum folder are the columns right after it.
 
 **Track right-click menu** (for Audio, Instrument and Bus tracks where listed):
 
@@ -175,13 +175,16 @@ Undo and redo work in both tabs: `⌘Z` for undo, and `Shift`+`⌘Z` or `⌘Y` f
 
 Automation records and plays back parameter changes, such as a fader or a plug-in knob, along with the loop.
 
-**Each loop has an automation layer.** Automation runs while the loop plays. Automation-only loops are hidden for now (automation will be redone differently); loops of that kind in older projects are not shown on the Loops page.
+**Each loop has an automation layer.** Automation runs while the loop plays. Automation-only loops are hidden for now; loops of that kind in older projects are not shown on the Loops page.
 
-**To record automation:** start a loop recording or overdubbing, then move a control on its channel, such as a fader, pan, EQ band, send or plug-in parameter. Those movements are written into that loop's automation layer.
+**The automation layer:** click **Automation** at the top (or press `A`). It opens on top of whatever is on screen (the loops, the MIDI editor or the mixer) and is see-through, so you can still see what's underneath. It shows the selected loop's lanes; select a different loop to switch. **Close** (or the **Automation** button again) hides it. Its controls:
 
-**To draw automation:** open the **Auto** dock (`A`) and select the loop. Use **+ Lane** in the panel to add a lane. The parameter menu groups parameters into Mixer, EQ, Sends and each plug-in. Use the pencil tool to draw points freehand. Each lane has **On** to enable it, **Clear** to empty it, and **X** to remove it.
-
-The panel has two views. **Loop layer** shows the selected loop's automation. **Track lanes** shows the track's own lanes, which are used on the timeline.
+- **Loop layer / Track lanes**: the selected loop's automation, or the track's own lanes (used on the timeline).
+- **Pencil**: drag to draw points freehand. Without it, click to add a point and drag points to move them (Shift-drag selects several, Alt-drag bends a segment; double-click or right-click a point to delete it).
+- **Eraser**: drag across a lane to remove every point in that span.
+- **Write** (record arm, red when on): while on, moving any control on the loop's channel (fader, pan, EQ band, send or plug-in parameter) writes it into the loop's automation as the loop plays. Recording or overdubbing a loop always writes, with or without Write.
+- **+ Lane**: add a lane; the menu groups parameters into Mixer, EQ, Sends and each plug-in.
+- Each lane has **On** (enable), **Clear** (empty it) and **X** (remove it).
 
 ## Mixer and routing
 
@@ -276,7 +279,7 @@ While a button is waiting, it reads **Waiting for MIDI...**. Each mapping appear
 | `O` | Overdub the selected loop |
 | `Delete` or `Backspace` | Clear the selected loop (asks for confirmation) |
 | `M` | Show or hide the Mixer dock |
-| `A` | Show or hide the Automation dock |
+| `A` | Show or hide the automation layer |
 | `E` | Show or hide the Editor dock |
 | `T` | Switch between the Loops and Timeline pages |
 | `⌘B` | Bounce the selected track |
