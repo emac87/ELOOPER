@@ -258,6 +258,71 @@ juce::String ChimeraProcessor::saveCart (int layer, const juce::File& file)
     return {};
 }
 
+void ChimeraProcessor::loadBuiltinCart (int layer)
+{
+    if (layer < 0 || layer >= kMaxLayers) return;
+    auto voices = std::make_shared<std::vector<Dx7Patch>> (chimeraCart());
+    if (voices->empty()) return;
+    editPatch ([&] (Patch& p) {
+        p.carts[(size_t) layer] = voices;
+        p.cartNames[(size_t) layer] = kChimeraCartName;
+        auto& lp = p.layers[(size_t) layer];
+        lp.engine = Engine::FM;
+        lp.fm = voices->front();
+        lp.useAmpEnv = false;
+    });
+}
+
+int ChimeraProcessor::randomCartVoice (int layer)
+{
+    if (layer < 0 || layer >= kMaxLayers) return -1;
+    if (! working.carts[(size_t) layer] || working.carts[(size_t) layer]->empty()) loadBuiltinCart (layer);
+    const auto cart = working.carts[(size_t) layer];
+    if (! cart || cart->empty()) return -1;
+    const int i = juce::Random::getSystemRandom().nextInt ((int) cart->size());
+    selectCartVoice (layer, i);
+    return i;
+}
+
+namespace {
+    juce::File chimeraDataDir()
+    {
+        auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+       #if JUCE_MAC
+        base = base.getChildFile ("Application Support");   // userApplicationDataDirectory is ~/Library on macOS
+       #endif
+        return base.getChildFile ("ELooper");
+    }
+    juce::File cartFolderSetting() { return chimeraDataDir().getChildFile ("Chimera cart folder.txt"); }
+}
+
+juce::File ChimeraProcessor::cartFolder()
+{
+    const auto path = cartFolderSetting().loadFileAsString().trim();
+    return path.isNotEmpty() && juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
+}
+
+void ChimeraProcessor::setCartFolder (const juce::File& dir)
+{
+    chimeraDataDir().createDirectory();
+    cartFolderSetting().replaceWithText (dir.getFullPathName());
+}
+
+juce::String ChimeraProcessor::randomCartFromFolder (int layer)
+{
+    const auto dir = cartFolder();
+    if (! dir.isDirectory()) return "Choose a carts folder first.";
+    auto files = dir.findChildFiles (juce::File::findFiles, true, "*.syx;*.SYX");
+    if (files.isEmpty()) return "No .syx files in " + dir.getFullPathName() + ".";
+    // Some files in a big folder may not be DX7 voices: try a few before giving up.
+    for (int attempt = 0; attempt < 8 && ! files.isEmpty(); ++attempt) {
+        const int i = juce::Random::getSystemRandom().nextInt (files.size());
+        if (loadCart (layer, files[i]).isEmpty()) { randomCartVoice (layer); return {}; }
+        files.remove (i);
+    }
+    return "Couldn't find a DX7 cart in " + dir.getFullPathName() + ".";
+}
+
 // ---- presets ------------------------------------------------------------------------------------
 namespace {
     const std::vector<Patch>& factory()
@@ -285,13 +350,31 @@ void ChimeraProcessor::loadFactoryPreset (int i)
     for (auto* m : macros) m->setValueNotifyingHost (0.0f);   // presets start from neutral macros
 }
 
+juce::String ChimeraProcessor::randomPreset()
+{
+    auto& rnd = juce::Random::getSystemRandom();
+    const auto user = presetFolder().findChildFiles (juce::File::findFiles, false, "*.chimera");
+    const int total = numFactoryPresets() + user.size();
+    if (total <= 1) return {};
+    int pick = rnd.nextInt (total);
+    if (pick == currentProgram && total > 1) pick = (pick + 1 + rnd.nextInt (total - 1)) % total;   // never the same one twice
+    if (pick < numFactoryPresets()) { loadFactoryPreset (pick); return factoryPresetName (pick); }
+    const auto& f = user[pick - numFactoryPresets()];
+    if (loadPreset (f).isEmpty()) return f.getFileNameWithoutExtension();
+    loadFactoryPreset (rnd.nextInt (numFactoryPresets()));
+    return factoryPresetName (currentProgram);
+}
+
+void ChimeraProcessor::randomisePatch()
+{
+    const auto seed = (uint32_t) juce::Random::getSystemRandom().nextInt (1 << 30);
+    setPatch (randomPatch (seed, chimeraCart()));
+    for (auto* m : macros) m->setValueNotifyingHost (0.0f);
+}
+
 juce::File ChimeraProcessor::presetFolder()
 {
-    auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
-   #if JUCE_MAC
-    base = base.getChildFile ("Application Support");   // userApplicationDataDirectory is ~/Library on macOS
-   #endif
-    auto dir = base.getChildFile ("ELooper").getChildFile ("Chimera Presets");
+    auto dir = chimeraDataDir().getChildFile ("Chimera Presets");
     dir.createDirectory();
     return dir;
 }

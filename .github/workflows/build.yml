@@ -42,12 +42,100 @@ jobs:
           path: ELooper-macos.zip
           if-no-files-found: error
 
+      - name: Package Chimera (AU, VST3, Standalone)
+        run: |
+          set -e
+          A=build/Chimera_artefacts/Release
+          mkdir -p Chimera
+          cp -R "$A/AU/Chimera.component" "$A/VST3/Chimera.vst3" "$A/Standalone/Chimera.app" Chimera/
+          for b in Chimera/Chimera.component Chimera/Chimera.vst3 Chimera/Chimera.app; do
+            codesign --force --deep --sign - "$b"
+          done
+          cat > Chimera/README.txt <<'TXT'
+          Chimera - multi-engine synth (analog, wavetable, DX7-style FM, sampler, pluck)
+
+          Chimera.app        Standalone: drag to Applications. First launch: System Settings > Privacy & Security > Open Anyway.
+          Chimera.component  Audio Unit (Logic, GarageBand, ELooper): copy to ~/Library/Audio/Plug-Ins/Components/
+          Chimera.vst3       VST3 (Ableton, Bitwig, Reaper...): copy to ~/Library/Audio/Plug-Ins/VST3/
+
+          These builds are not notarised. If a host refuses to load the plug-in, run in Terminal:
+            xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/Chimera.component ~/Library/Audio/Plug-Ins/VST3/Chimera.vst3
+          then restart the host (Logic may need its plug-in cache reset in Plug-in Manager).
+          TXT
+          sed -i '' 's/^          //' Chimera/README.txt
+          ditto -c -k --keepParent Chimera Chimera-macos.zip
+
+      - name: Upload Chimera
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chimera-macos
+          path: Chimera-macos.zip
+          if-no-files-found: error
+
+  windows:
+    name: Windows (Chimera VST3 + Standalone)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DELOOPER_BUILD_APP=OFF -DCHIMERA_BUILD_PLUGIN=ON
+
+      - name: Build
+        run: cmake --build build --config Release --target Chimera_VST3 Chimera_Standalone elooper_synth_tests
+
+      - name: Test
+        run: ctest --test-dir build -C Release -R synth --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $a = "build/Chimera_artefacts/Release"
+          New-Item -ItemType Directory -Force Chimera | Out-Null
+          Copy-Item -Recurse "$a/VST3/Chimera.vst3" Chimera/
+          Copy-Item "$a/Standalone/Chimera.exe" Chimera/
+          @"
+          Chimera - multi-engine synth (analog, wavetable, DX7-style FM, sampler, pluck)
+
+          Chimera.exe    Standalone: run it from anywhere. Windows SmartScreen may warn because the build is not signed:
+                         click More info > Run anyway.
+          Chimera.vst3   VST3 plug-in: copy the whole Chimera.vst3 folder to C:\Program Files\Common Files\VST3\
+                         then rescan plug-ins in your DAW.
+          "@ -replace '(?m)^          ', '' | Set-Content Chimera/README.txt
+          Compress-Archive -Path Chimera -DestinationPath Chimera-windows.zip
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chimera-windows
+          path: Chimera-windows.zip
+          if-no-files-found: error
+
+  web:
+    name: Web (Chimera in the browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mymindstorm/setup-emsdk@v14
+
+      - name: Build
+        run: web/build.sh
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Chimera-web
+          path: web/dist/chimera.html
+          if-no-files-found: error
+
   release:
     # Publishes the newest Mac build at a permanent link:
     # https://github.com/emac87/ELOOPER/releases/download/latest/ELooper-macos.zip
     name: Publish "latest" release
-    needs: macos
-    if: github.event_name == 'push' && github.ref == 'refs/heads/elooper-initial'
+    needs: [macos, windows, web]
+    # ELooper's Mac build gates the release; Chimera's Windows/web files are added when they built.
+    if: always() && needs.macos.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/elooper-initial'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -57,6 +145,20 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: ELooper-macos
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Chimera-macos
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: Chimera-windows
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: Chimera-web
 
       - name: Move the latest tag and upload the app
         env:
@@ -68,7 +170,10 @@ jobs:
             gh release create latest --prerelease --title "Latest build" \
               --notes "Newest successful Mac build of ELooper. Unzip, move ELooper.app to Applications, then System Settings > Privacy & Security > Open Anyway on first launch."
           fi
-          gh release upload latest ELooper-macos.zip --clobber
+          gh release upload latest ELooper-macos.zip Chimera-macos.zip --clobber
+          for f in Chimera-windows.zip chimera.html; do
+            if [ -f "$f" ]; then gh release upload latest "$f" --clobber; fi
+          done
           gh release edit latest --target "$GITHUB_SHA" --notes "Newest successful Mac build of ELooper (commit ${GITHUB_SHA::7}). Unzip, move ELooper.app to Applications, then System Settings > Privacy & Security > Open Anyway on first launch."
 
   linux:

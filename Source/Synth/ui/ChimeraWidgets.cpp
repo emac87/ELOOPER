@@ -67,6 +67,18 @@ void PillButton::paint (juce::Graphics& g)
     g.setColour (lit ? colour : (hot ? colour : theme::outline));
     g.drawRoundedRectangle (b, 4.0f, 1.0f);
     g.setColour (lit ? juce::Colours::black.withAlpha (0.85f) : theme::text);
+    if (diceGlyph) {
+        const float side = juce::jmin (b.getWidth(), b.getHeight()) - 8.0f;
+        const auto die = juce::Rectangle<float> (side, side).withCentre (b.getCentre());
+        g.setColour (hot ? colour : theme::text);
+        g.drawRoundedRectangle (die, side * 0.22f, 1.3f);
+        const float pr = juce::jmax (1.1f, side * 0.09f), o = side * 0.26f;
+        const auto c = die.getCentre();
+        for (auto p : { juce::Point<float> (-o, -o), juce::Point<float> (o, -o), juce::Point<float> (0, 0),
+                        juce::Point<float> (-o, o), juce::Point<float> (o, o) })
+            g.fillEllipse (c.x + p.x - pr, c.y + p.y - pr, pr * 2.0f, pr * 2.0f);
+        return;
+    }
     g.setFont (theme::font (fontSize, lit));
     g.drawText (text, getLocalBounds().reduced (4, 0), juce::Justification::centred, true);
 }
@@ -75,6 +87,7 @@ void PillButton::mouseUp (const juce::MouseEvent& e)
 {
     if (! contains (e.getPosition()) || e.mods.isPopupMenu()) return;
     if (get) { on = ! on; if (set) set (on); repaint(); }
+    else if (onClickMods) onClickMods (e.mods.isShiftDown());
     else if (onClick) onClick();
 }
 

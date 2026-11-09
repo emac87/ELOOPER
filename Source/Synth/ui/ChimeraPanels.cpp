@@ -388,6 +388,14 @@ public:
         ampEnv->setTooltip ("On: the amp envelope shapes the sound. Off: only the operator envelopes do (like a real DX7).");
         loadBtn = &button ("Load cart (.syx)", [this] { chooseCart(); });
         saveBtn = &button ("Save cart", [this] { saveCart(); });
+        builtinBtn = &button ("Chimera cart", [this] { pickedVoice = 0; ctx.proc.loadBuiltinCart (ctx.layer); });
+        builtinBtn->setTooltip ("Load Chimera's own 32-voice cart");
+        diceBtn = &make<PillButton>();
+        diceBtn->diceGlyph = true;
+        diceBtn->colour = accent;
+        diceBtn->setTooltip ("Random voice from this cart (Shift-click: random cart from the carts folder)");
+        diceBtn->onClickMods = [this] (bool shift) { rollDice (shift); };
+        folderBtn = &button ("Folder...", [this] { chooseFolder ([] {}); });
         voiceName = &caption ([this] {
             const auto& f = ctx.L().fm;
             return juce::String (f.name).trimEnd();
@@ -396,6 +404,12 @@ public:
         cartName = &caption ([this] {
             const auto cart = ctx.P().carts[(size_t) ctx.layer];
             return cart ? juce::String (ctx.P().cartNames[(size_t) ctx.layer]) + "  (" + juce::String ((int) cart->size()) + ")" : juce::String ("No cart loaded");
+        });
+        cartName->dim = false; cartName->bold = true; cartName->size = 11.5f;
+        addPoller ([this] {
+            const auto f = ChimeraProcessor::cartFolder();
+            const auto tip = f.isDirectory() ? "Carts folder: " + f.getFullPathName() + " (click to change)" : juce::String ("Choose the folder of .syx carts used by the Shift-click dice");
+            if (folderBtn->getTooltip() != tip) folderBtn->setTooltip (tip);
         });
 
         for (int i = 0; i < 6; ++i) {
@@ -449,11 +463,18 @@ public:
         auto mid = r;
 
         const int h = 22, g = 4;
-        algoView->setBounds (takeRow (left, juce::jmax (70, left.getHeight() - (3 * (h + g) + h + 8 + h + g + 18 + 16) - 6), 6));
+        algoView->setBounds (takeRow (left, juce::jmax (70, left.getHeight() - (3 * (h + g) + h + 8 + 2 * (h + g) + 18 + 16) - 6), 6));
         algo->setBounds (takeRow (left, h, g)); feedback->setBounds (takeRow (left, h, g)); amount->setBounds (takeRow (left, h, g));
         ampEnv->setBounds (takeRow (left, h, 8));
         splitH (takeRow (left, h, g), { loadBtn, saveBtn });
-        cartName->setBounds (takeRow (left, 16, 2));
+        {
+            auto row = takeRow (left, h, g);
+            const int dw = 26, fw = juce::jlimit (52, 70, row.getWidth() / 3);
+            folderBtn->setBounds (row.removeFromRight (fw)); row.removeFromRight (g);
+            diceBtn->setBounds (row.removeFromRight (dw)); row.removeFromRight (g);
+            builtinBtn->setBounds (row);
+        }
+        left.removeFromTop (2);
         voiceName->setBounds (left.removeFromTop (16));
 
         auto tabs = takeRow (mid, 24, 6);
@@ -466,6 +487,7 @@ public:
         egView->setBounds (takeRow (mid, egH, 6));
         for (int i = 0; i < 4; ++i) splitH (takeRow (mid, h, g), { rate[i], lev[i] });
 
+        cartName->setBounds (takeRow (right, 16, 0));
         voiceHead->setBounds (takeRow (right, 16, 2));
         const int cellH = juce::jlimit (14, 24, (right.getHeight() - 15 * 2) / 16);
         const int cw = (right.getWidth() - 4) / 2;
@@ -479,8 +501,44 @@ private:
     bool cellLit (int i) const
     {
         const auto c = ctx.P().carts[(size_t) ctx.layer];
-        if (! c || i >= (int) c->size() || i != pickedVoice) return false;
-        return std::memcmp ((*c)[(size_t) i].name, ctx.L().fm.name, 10) == 0;
+        if (! c || i >= (int) c->size()) return false;
+        auto same = [&] (int k) {
+            const auto& v = (*c)[(size_t) k];
+            return std::memcmp (v.name, ctx.L().fm.name, 10) == 0 && v.algorithm == ctx.L().fm.algorithm;
+        };
+        if (pickedVoice >= 0 && pickedVoice < (int) c->size() && same (pickedVoice)) return i == pickedVoice;
+        for (int k = 0; k < (int) c->size(); ++k)
+            if (same (k)) return k == i;   // no (valid) stored index: first voice matching name + algorithm
+        return false;
+    }
+    void rollDice (bool fromFolder)
+    {
+        const int layer = ctx.layer;
+        if (! fromFolder) { pickedVoice = ctx.proc.randomCartVoice (layer); return; }
+        const auto err = ctx.proc.randomCartFromFolder (layer);
+        if (err.isEmpty()) { pickedVoice = -1; return; }   // cell lit by name + algorithm
+        if (! ChimeraProcessor::cartFolder().isDirectory()) {
+            juce::Component::SafePointer<FmSub> sp (this);
+            chooseFolder ([sp, layer] {
+                if (sp == nullptr) return;
+                const auto e2 = sp->ctx.proc.randomCartFromFolder (layer);
+                if (e2.isEmpty()) sp->pickedVoice = -1; else showError (e2);
+            });
+        } else showError (err);
+    }
+    void chooseFolder (std::function<void()> then)
+    {
+        auto start = ChimeraProcessor::cartFolder();
+        if (! start.isDirectory()) start = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+        chooser = std::make_unique<juce::FileChooser> ("Choose the folder with your DX7 carts (.syx)", start);
+        juce::Component::SafePointer<FmSub> sp (this);
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                              [sp, then] (const juce::FileChooser& fc) {
+                                  const auto d = fc.getResult();
+                                  if (sp == nullptr || ! d.isDirectory()) return;
+                                  ChimeraProcessor::setCartFolder (d);
+                                  if (then) then();
+                              });
     }
     void refreshCells()
     {
@@ -536,7 +594,7 @@ private:
     AlgoView* algoView {};
     ValueBar *algo {}, *feedback {}, *amount {}, *coarse {}, *fineB {}, *detune {}, *opLevel {}, *velSens {};
     ValueBar *rate[4] {}, *lev[4] {};
-    PillButton *ampEnv {}, *loadBtn {}, *saveBtn {}, *opBtn[6] {}, *cells[32] {};
+    PillButton *ampEnv {}, *loadBtn {}, *saveBtn {}, *builtinBtn {}, *diceBtn {}, *folderBtn {}, *opBtn[6] {}, *cells[32] {};
     MenuButton* opMode {};
     Caption *voiceName {}, *cartName {}, *voiceHead {}, *opHead {};
     EgView* egView {};

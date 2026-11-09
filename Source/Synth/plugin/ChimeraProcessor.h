@@ -8,6 +8,7 @@
 // editPatch(), which copies the working patch and hands the copy to the audio thread.
 #include <JuceHeader.h>
 #include "Synth/dsp/Synth.h"
+#include "Synth/dsp/Presets.h"
 
 namespace el::chimera {
 
@@ -32,6 +33,15 @@ public:
     juce::String loadCart (int layer, const juce::File& file);          // DX7 .syx (32 voices or 1)
     void selectCartVoice (int layer, int index);                         // copies it into the layer's FM voice
     juce::String saveCart (int layer, const juce::File& file);           // writes the layer's cart (with its current voice)
+    void loadBuiltinCart (int layer);                                    // Chimera's own 32-voice cart, voice 1
+    int randomCartVoice (int layer);                                     // random voice from the layer's cart (built-in if none); returns it
+    juce::String randomCartFromFolder (int layer);                       // random .syx under cartFolder(), then a random voice; "" = ok
+    static juce::File cartFolder();                                      // remembered between sessions; invalid file if never set
+    static void setCartFolder (const juce::File& dir);
+
+    // Dice: a random factory or user preset (returns its name), or a brand-new random patch.
+    juce::String randomPreset();
+    void randomisePatch();
 
     // Factory and user presets (user presets are .chimera files in presetFolder()).
     static int numFactoryPresets();
@@ -98,6 +108,5 @@ private:
 std::unique_ptr<juce::XmlElement> patchToXml (const Patch&);
 Patch patchFromXml (const juce::XmlElement&, juce::StringArray* warnings = nullptr);
 SamplePtr loadSampleFile (const juce::File&, juce::String& error);   // decodes with JUCE's formats
-std::vector<Patch> makeFactoryPresets();
 
 } // namespace el::chimera

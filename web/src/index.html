@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chimera</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="startOverlay" role="button" tabindex="0" aria-label="Click to start audio">
+  <div class="startBox"><div class="wordmark big">CHIMERA<span class="wmLine"><i></i><i></i><i></i><i></i></span></div>
+  <p>Click to start audio</p><small>4-layer synth: Analog, Wavetable, FM, Sampler, Pluck</small></div>
+</div>
+<div id="app">
+  <header id="top" class="panel"></header>
+  <nav id="tabs"></nav>
+  <main id="main"></main>
+  <footer id="keys" class="panel"></footer>
+</div>
+<div id="dropHint">Drop a .syx cart or an audio file</div>
+<div id="toast" role="status"></div>
+<input type="file" id="fileCart" accept=".syx,.SYX" hidden>
+<input type="file" id="fileSample" accept="audio/*,.wav,.aif,.aiff,.flac,.mp3,.ogg" hidden>
+<input type="file" id="filePatch" accept=".json,application/json" hidden>
+<input type="file" id="fileDir" webkitdirectory multiple hidden>
+<script src="app.js"></script>
+</body>
+</html>

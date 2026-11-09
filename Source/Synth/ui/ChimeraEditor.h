@@ -2,6 +2,7 @@
 // Chimera's editor window (see ChimeraEditor.cpp): top bar (presets, macros, master, meter), layer
 // tabs, a voice column, and three pages (sound / modulation / effects) built from ChimeraPanels.
 #include <JuceHeader.h>
+#include "UI/LookAndFeel.h"
 #include "Synth/plugin/ChimeraProcessor.h"
 #include "Synth/ui/ChimeraWidgets.h"
 #include "Synth/ui/ChimeraPanels.h"
@@ -25,6 +26,7 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
+    ELooperLookAndFeel laf;   // own look, so the plug-in builds match ELooper without its app-wide setup
     enum Page { pageSound = 0, pageMod, pageFx, numPages };
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override { tick(); }

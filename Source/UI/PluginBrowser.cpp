@@ -178,7 +178,7 @@ void showPluginMenu (EngineController& c, Id trackId, FxChain chain, int insertI
     }
 
     // Logic-style: recently used first, then a submenu per type, then every plug-in by maker.
-    constexpr int scanId = 1, firstPluginId = 100;
+    constexpr int scanId = 1, randomId = 2, firstPluginId = 100;
     juce::PopupMenu menu;
     auto label = [] (const juce::PluginDescription& d, bool withMaker) {
         return d.name + (withMaker && d.manufacturerName.isNotEmpty() ? "  (" + d.manufacturerName + ")" : juce::String());
@@ -191,6 +191,8 @@ void showPluginMenu (EngineController& c, Id trackId, FxChain chain, int insertI
     };
 
     if (list.empty()) {
+        if (chain == FxChain::Instrument)
+            menu.addItem (randomId, "Random instrument", false);
         menu.addItem (-1, juce::String (juce::CharPointer_UTF8 ("No plug-ins found \xe2\x80\x94 scan first")), false);
     } else {
         // Built-in instruments first (always there, no scan needed).
@@ -203,7 +205,9 @@ void showPluginMenu (EngineController& c, Id trackId, FxChain chain, int insertI
                     it.text = list[i].name + "  (multi-engine synth)";
                     menu.addItem (it);
                 }
-            if (any) menu.addSeparator();
+            // Random pick across every instrument (built-in and AU); handled in the callback below.
+            menu.addItem (randomId, "Random instrument");
+            menu.addSeparator();
         }
 
         // Recently used
@@ -260,6 +264,10 @@ void showPluginMenu (EngineController& c, Id trackId, FxChain chain, int insertI
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target),
         [&c, trackId, chain, insertIndex, list, insertedCb = std::move (onInserted)] (int result)
         {
+            // "Random instrument" resolves to one uniformly chosen entry, then takes the normal insert path below.
+            if (result == randomId && ! list.empty())
+                result = firstPluginId + juce::Random::getSystemRandom().nextInt ((int) list.size());
+
             if (result == scanId)
             {
                 showPluginScanWindow (c);

@@ -24,6 +24,13 @@ public:
         next = &button (">", [this] { stepPreset (1); });
         prev->setTooltip ("Previous factory preset");
         next->setTooltip ("Next factory preset");
+        dice = &make<PillButton>();
+        dice->diceGlyph = true;
+        dice->setTooltip ("Random preset (Shift-click: new random patch)");
+        dice->onClickMods = [this] (bool shift) {
+            if (shift) proc.randomisePatch(); else proc.randomPreset();
+            currentUserFile = juce::File();
+        };
         presetMenu = &make<MenuButton>();
         presetMenu->getText = [this] {
             const auto& pt = ctx.P();
@@ -92,6 +99,7 @@ public:
         auto btns = row1.removeFromRight (176);
         row1.removeFromRight (8);
         next->setBounds (row1.removeFromRight (26)); row1.removeFromRight (4);
+        dice->setBounds (row1.removeFromRight (28)); row1.removeFromRight (4);
         presetMenu->setBounds (row1);
         saveBtn->setBounds (btns.removeFromLeft (52)); btns.removeFromLeft (4);
         saveAsBtn->setBounds (btns.removeFromLeft (66)); btns.removeFromLeft (4);
@@ -211,7 +219,7 @@ private:
     }
 
     ChimeraProcessor& proc;
-    PillButton *prev {}, *next {}, *saveBtn {}, *saveAsBtn {}, *loadBtn {};
+    PillButton *prev {}, *next {}, *dice {}, *saveBtn {}, *saveAsBtn {}, *loadBtn {};
     MenuButton* presetMenu {};
     ValueBar *macro[kMacros] {}, *master {};
     Caption* voices {};
@@ -302,6 +310,7 @@ private:
 ChimeraEditor::ChimeraEditor (ChimeraProcessor& p)
     : juce::AudioProcessorEditor (p), proc (p), ctx { p, 0 }
 {
+    setLookAndFeel (&laf);
     for (int i = 0; i < kMaxLayers; ++i) {
         const auto e = proc.patch().layers[(size_t) i].engine;
         lastEngine[i] = e == Engine::Off ? Engine::Analog : e;
@@ -387,6 +396,7 @@ ChimeraEditor::ChimeraEditor (ChimeraProcessor& p)
 
 ChimeraEditor::~ChimeraEditor()
 {
+    setLookAndFeel (nullptr);
     stopTimer();
     proc.removeChangeListener (this);
 }

@@ -4,7 +4,7 @@
 // shapes, wavetable frame, sample waveform, FM algorithm). Controls read the processor's patch
 // through getters and are refreshed by a ~20 Hz poll, so they never fight a drag in progress.
 #include <JuceHeader.h>
-#include "UI/StripWidgets.h"
+#include "UI/ValueBar.h"
 #include "UI/Theme.h"
 #include "Synth/plugin/ChimeraProcessor.h"
 #include <functional>
@@ -43,6 +43,8 @@ public:
     std::function<bool()> get;                 // set = toggle button, bound to get / set
     std::function<void (bool)> set;
     std::function<void()> onClick;             // plain button
+    std::function<void (bool shift)> onClickMods;   // plain button that wants to know about Shift
+    bool diceGlyph = false;                    // draw a vector die instead of text
     void poll() { if (get) { const bool v = get(); if (v != on) { on = v; repaint(); } } }
     void paint (juce::Graphics&) override;
     void mouseEnter (const juce::MouseEvent&) override { repaint(); }

@@ -49,21 +49,21 @@ ChannelStrip::ChannelStrip (EngineController& c, PresetManager& p, Id id)
     addAndMakeVisible (viewport);
 
     gainBar = std::make_unique<ValueBar>();
-    gainBar->bind (controller, trackId, { ParamKind::InputGain, kInvalidId, -1 });
+    bindValueBar (*gainBar, controller, trackId, { ParamKind::InputGain, kInvalidId, -1 });
     gainBar->label = "In"; gainBar->bipolar = true; gainBar->defaultValue = 0.5f;
     gainBar->format = [] (float v) { return stripfmt::signedDb (pm::inputGainToDb (v)); };
     gainBar->setTooltip ("Input gain (drag; double-click resets to 0 dB)");
     addAndMakeVisible (*gainBar);
 
     panBar = std::make_unique<ValueBar>();
-    panBar->bind (controller, trackId, { ParamKind::Pan, kInvalidId, -1 });
+    bindValueBar (*panBar, controller, trackId, { ParamKind::Pan, kInvalidId, -1 });
     panBar->label = "Pan"; panBar->bipolar = true; panBar->defaultValue = 0.5f;
     panBar->format = [] (float v) { return stripfmt::panText (v); };
     panBar->setTooltip ("Pan (drag; double-click centres)");
     addAndMakeVisible (*panBar);
 
     fader = std::make_unique<ValueBar>();
-    fader->bind (controller, trackId, { ParamKind::Volume, kInvalidId, -1 });
+    bindValueBar (*fader, controller, trackId, { ParamKind::Volume, kInvalidId, -1 });
     fader->label = "Vol"; fader->vertical = true; fader->defaultValue = pm::kUnityVolume;
     fader->format = [] (float v) { return stripfmt::signedDb (pm::volumeToDb (v)); };
     fader->setTooltip ("Volume (drag up / down; shift = fine; double-click resets to 0 dB)");
@@ -209,7 +209,7 @@ void ChannelStrip::buildContent (const TrackModel& t)
             const auto& sp = t.sends[(size_t) i];
             auto bus = controller.session().findTrack (sp.busId);
             auto bar = std::make_unique<ValueBar>();
-            bar->bind (controller, trackId, { ParamKind::SendLevel, sp.busId, -1 });
+            bindValueBar (*bar, controller, trackId, { ParamKind::SendLevel, sp.busId, -1 });
             bar->label = (bus ? bus->name : juce::String ("?")) + (sp.preFader ? " pre" : "");
             bar->defaultValue = 0.0f;
             bar->fill = bus ? bus->colour : theme::accent;
