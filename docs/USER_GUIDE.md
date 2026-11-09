@@ -16,12 +16,13 @@ This guide covers day-to-day use of ELooper on macOS. For building the app, see 
 10. [Mixer and routing](#mixer-and-routing)
 11. [Plug-ins and presets](#plug-ins-and-presets)
 12. [Chimera — built-in synth](#chimera--built-in-synth)
-13. [Bouncing a track](#bouncing-a-track)
-14. [Timeline and arrangement record](#timeline-and-arrangement-record)
-15. [Ableton Link](#ableton-link)
-16. [MIDI controllers](#midi-controllers)
-17. [Keyboard shortcuts](#keyboard-shortcuts)
-18. [Saving and opening projects](#saving-and-opening-projects)
+13. [Chimera outside ELooper](#chimera-outside-elooper)
+14. [Bouncing a track](#bouncing-a-track)
+15. [Timeline and arrangement record](#timeline-and-arrangement-record)
+16. [Ableton Link](#ableton-link)
+17. [MIDI controllers](#midi-controllers)
+18. [Keyboard shortcuts](#keyboard-shortcuts)
+19. [Saving and opening projects](#saving-and-opening-projects)
 
 ## First launch
 
@@ -239,9 +240,12 @@ Chimera is a multi-layer synthesizer that comes with ELooper. It needs no plug-i
 2. Load Chimera: on the mixer strip, click **+ Instrument** and choose **Built in > Chimera (multi-engine synth)**. You can also right-click the track label and choose **Instrument...**.
 3. Click the **Chimera** chip on the strip to show or hide its window.
 
+In the instrument menu, **Random instrument** sits under the Built in entries. It loads a random instrument from Chimera plus every scanned Audio Unit instrument.
+
 **Top bar**
 
 - **Preset browser:** **<** and **>** step through the factory presets. The preset menu lists them by category, then your **User presets**.
+- **Dice:** click for a random preset, factory or user, never the same one twice. Shift-click builds a brand-new random patch named **Random NNNN**: one to three layers, with engines chosen by weight, and Macro 1 set to Brightness. Save it with **Save as** if you like it.
 - **Save, Save as, Load:** **Save** overwrites the current user preset, or asks for a name the first time. **Save as** always asks for a name. **Load** opens a `.chimera` file.
 - **Macros:** four macros, named by each preset. Right-click one to rename it (up to 24 characters). Macros are modulation sources and can be automated.
 - **Master:** the output volume, 70% by default.
@@ -293,6 +297,9 @@ Each layer has one engine. Its controls are on the **Engine** panel.
 - **Use amp envelope:** when off, only the operator envelopes shape the sound, as on a real DX7. Loading a cartridge turns it off.
 - **Load cart (.syx)**, or drop a `.syx` file, loads either a 32-voice cartridge or a single-voice patch. A cartridge's voices appear in a grid on the right. Click one to load it.
 - **Save cart** writes the layer's voices to a `.syx` file. Without a loaded cartridge, it saves the current voice alone. Empty slots in a 32-voice file are Init voices.
+- **Chimera cart** loads the built-in **Chimera Voices** cart: 32 original voices in e-pianos and keys, bells and mallets, basses, brass and winds, leads, pads and strings, and percussion and FX.
+- **Dice** next to it: click for a random voice from the layer's cart (Chimera Voices if the layer has no cart). Shift-click loads a random `.syx` file from your carts folder, then a random voice from it. If no folder is set yet, Shift-click asks you to choose one.
+- **Folder...** sets the carts folder. ELooper remembers it, and searches its subfolders.
 
 **Sampler**
 
@@ -347,17 +354,19 @@ Each effect has an **On** switch.
 
 **Factory presets**
 
-| Category | Presets |
-|---|---|
-| Init | Init, Sampler |
-| Pad | Warm Pad, Morph Pad, Vocal Drift |
-| Bass | Fat Bass, Acid Line, Wobble Bass, FM Bass |
-| Lead | Super Saw Lead, Square Lead, Sync Lead |
-| Keys | Glass Keys, FM E.Piano, FM Bell |
-| Brass | FM Brass |
-| Pluck | Nylon Pluck, Harp |
-| FX | Drone Machine |
-| Layered | Keys + Pad, Bass \| Keys Split |
+Chimera has 52 factory presets in nine categories. The preset menu lists them in this order.
+
+| Category | Count | Examples |
+|---|---|---|
+| Init | 2 | Init, Sampler |
+| Bass | 9 | Fat Bass, Acid Line, Deep Sub, Squelch Box |
+| Lead | 8 | Super Saw Lead, Sync Lead, Glide Lead, Crystal Lead |
+| Pad | 8 | Warm Pad, Morph Pad, Choir Loft, Shimmer Veil |
+| Keys | 6 | Glass Keys, Drawbar Organ, Vibe Mallets |
+| FM | 6 | FM Bell, FM Brass, Wood Marimba, Metal Anvil |
+| Pluck | 5 | Nylon Pluck, Harp, Koto Strum |
+| Texture | 4 | Drone Machine, Wind Sweep, Comb Cathedral |
+| Layered | 4 | Keys + Pad, Bass \| Keys Split, Pluck Over Pad |
 
 **Automation and MIDI**
 
@@ -365,6 +374,36 @@ Each effect has an **On** switch.
 - **Mod wheel** (CC 1) drives the Mod Wheel source. **Channel pressure** drives Aftertouch. **Pitch bend** follows the pitch bend range.
 - **Sustain** (CC 64) holds notes until the pedal is released.
 - **All Notes Off** (CC 123) releases all notes. **All Sound Off** (CC 120) silences everything at once and clears the effect tails.
+
+## Chimera outside ELooper
+
+Chimera is also built as a standalone app, an Audio Unit and a VST3 plug-in, and as a web page. The downloads are in the **latest** release at `https://github.com/emac87/ELOOPER/releases/download/latest/`, with the same URL pattern for each zip.
+
+**Mac** (`Chimera-macos.zip`):
+
+- `Chimera.app` is the standalone app. On first launch, use **System Settings > Privacy & Security > Open Anyway**.
+- `Chimera.component` is the Audio Unit. Copy it to `~/Library/Audio/Plug-Ins/Components/`.
+- `Chimera.vst3` is the VST3 plug-in. Copy it to `~/Library/Audio/Plug-Ins/VST3/`.
+- The builds are not notarised. If a host refuses to load a plug-in, run this in Terminal:
+
+```
+xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/Chimera.component ~/Library/Audio/Plug-Ins/VST3/Chimera.vst3
+```
+
+**Windows** (`Chimera-windows.zip`):
+
+- `Chimera.exe` is the standalone app. SmartScreen may warn because the build is not signed: click **More info** > **Run anyway**.
+- `Chimera.vst3` is the VST3 plug-in. Copy the whole folder to `C:\Program Files\Common Files\VST3\`.
+- There is no AAX build.
+
+**Web** (`chimera.html`, from the same release):
+
+- Open it in Chrome, Edge, Firefox or Safari, then click the page to start audio.
+- Computer keyboard: `A` `W` `S` `E` `D` `F` `T` `G` `Y` `H` `U` `J` `K` play notes, and `Z` and `X` change octave. Web MIDI works in Chrome and Edge.
+- Drag `.syx` carts and audio samples onto the page.
+- **Export** saves the patch as a `.chimera.json` file. Web presets are separate from the desktop `.chimera` presets.
+
+Presets saved in ELooper and in the plug-ins are the same `.chimera` files, in the same preset folder on the same computer.
 
 ## Bouncing a track
 
