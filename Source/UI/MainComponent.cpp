@@ -399,8 +399,8 @@ void MainComponent::autosaveNow()
     auto name = (f == juce::File() ? juce::String ("Untitled") : f.getFileNameWithoutExtension()).replaceCharacters ("/\\:", "---");
     const auto target = autosaveDir().getChildFile (name + ".elooper");
     const auto r = SessionSerializer::save (controller, target, false);
-    if (r.wasOk()) autosavedAt = changeCount;
-    else DBG ("Autosave failed: " << r.getErrorMessage());
+    if (r.wasOk()) { autosavedAt = changeCount; }
+    else { DBG ("Autosave failed: " << r.getErrorMessage()); }
 }
 
 void MainComponent::clearSelectedLoop()
@@ -567,6 +567,14 @@ bool MainComponent::sceneKeysBlocked() const
 
 bool MainComponent::perform (const InvocationInfo& info)
 {
+    // Unmodified keys (letters, digits, Space, Backspace) belong to a focused text field or combo,
+    // so a typo in a name field can never start the transport or delete a loop.
+    if (info.invocationMethod == InvocationInfo::fromKeyPress
+        && ! info.keyPress.getModifiers().isCommandDown()
+        && ! info.keyPress.getModifiers().isAltDown()
+        && sceneKeysBlocked())
+        return false;
+
     switch (info.commandID) {
         case cmdNew:      newSession(); return true;
         case cmdOpen:     openProject(); return true;

@@ -15,12 +15,13 @@ This guide covers day-to-day use of ELooper on macOS. For building the app, see 
 9. [Automation](#automation)
 10. [Mixer and routing](#mixer-and-routing)
 11. [Plug-ins and presets](#plug-ins-and-presets)
-12. [Bouncing a track](#bouncing-a-track)
-13. [Timeline and arrangement record](#timeline-and-arrangement-record)
-14. [Ableton Link](#ableton-link)
-15. [MIDI controllers](#midi-controllers)
-16. [Keyboard shortcuts](#keyboard-shortcuts)
-17. [Saving and opening projects](#saving-and-opening-projects)
+12. [Chimera — built-in synth](#chimera--built-in-synth)
+13. [Bouncing a track](#bouncing-a-track)
+14. [Timeline and arrangement record](#timeline-and-arrangement-record)
+15. [Ableton Link](#ableton-link)
+16. [MIDI controllers](#midi-controllers)
+17. [Keyboard shortcuts](#keyboard-shortcuts)
+18. [Saving and opening projects](#saving-and-opening-projects)
 
 ## First launch
 
@@ -48,9 +49,13 @@ The **transport bar** across the top holds:
 - **Docks**: **Mixer** and **Editor** (the MIDI editor) open below the page; drag the bar between the page and a dock to resize it. **Automation** opens the automation layer on top of everything (see [Automation](#automation)).
 - **Settings** and a CPU readout.
 
+On a narrow window, the transport bar moves **Tap**, **Link**, **Sync** and **Arr Rec** into a **•••** menu, and at very narrow widths it moves **Metro** there too. The dock buttons shorten to **Mix**, **Auto** and **Edit**. Stopping the transport sends note-off and sustain-off messages, so no notes hang.
+
 The **Loops** page is the main screen. It has no mixer controls, only loops. Each track is a column: its label is pinned along the bottom of the screen and its loops are stacked above it, loop 1 at the top, with **+** under the last one. Click a cell to select it. **+ Track** at the end of the labels adds a track. Plain buses are shown on the mixer only (a bus that holds loops still appears as a column). All levels, effects, sends and routing are on the **Mixer** dock. The labels and scene buttons scroll together with the loops.
 
 **Scenes:** the **Scene** buttons run down the left side, one per row of loops. **Scene 1** plays the top row (the first loop of every track) and stops every other loop. **Scene 2** does the same with the second row, and so on. Each loop starts and stops on its own quantise setting (the next bar by default). A track whose slot in that row is empty goes silent. A loop that is recording is left alone. The scene button lights up while its row is the one playing. **Stop all** sits in the bottom-left corner, beside the labels. Right-click a Scene button or **Stop all** for **MIDI Learn**.
+
+**Scenes menu and keys:** the **Scenes** menu lists **Launch Scene 1** to **Launch Scene 9** and **Stop All Loops**. The number keys do the same: `1` to `9` launch scenes 1 to 9, and `0` stops all loops. The keys are ignored while you type in a text field, so a name or a tempo entry never starts a scene by accident.
 
 ## Tracks
 
@@ -59,7 +64,7 @@ There are five kinds of track:
 | Kind | What it does |
 |---|---|
 | **Audio** | Records from an audio input. |
-| **Instrument** | Takes MIDI input and plays a software instrument (Audio Unit). Its MIDI loops record that input. |
+| **Instrument** | Takes MIDI input and plays a software instrument: an Audio Unit, or the built-in [Chimera](#chimera--built-in-synth) synth. Its MIDI loops record that input. |
 | **Bus** | Receives sends and track outputs. It can record what it receives. |
 | **Master** | The final mix. It goes to the hardware output pair. Every session has one. |
 | **AuxOut** | An extra stereo output of a multi-output instrument. See [Mixer and routing](#mixer-and-routing). |
@@ -90,7 +95,7 @@ A new session starts with one audio track and one instrument track.
 2. **Set an input.** Right-click an audio track's header, choose **Input**, and pick the interface input your instrument or microphone is on.
 3. **Start the loop.** Click an empty cell. The transport starts if it is stopped. Loops start and stop on the quantise point (Bar by default), so the cell blinks yellow until recording begins on that bar.
 4. **Play.** The cell turns red while it records. Recording ends after the master bars, and the loop then plays (After Record defaults to Play). You can also click the cell again to close the recording early, on the next quantise point.
-5. **Overdub.** Shift-click a playing loop, or double-click an audio loop, to overdub on top of it. The cell turns orange while overdubbing. Shift-click or double-click again to stop overdubbing.
+5. **Overdub.** Shift-click a playing loop to overdub on top of it. The cell turns orange while overdubbing. Shift-click again to stop overdubbing.
 
 Once a loop has been recorded, an audio track in Auto monitor mutes its live input, so you hear the loop and not the input on top of it. Arm the track, or set Monitor to On, to hear the input again.
 
@@ -109,9 +114,10 @@ Once a loop has been recorded, an audio track in Auto monitor mutes its live inp
 
 **Mouse:**
 
-- **Click**: trigger the loop. An empty loop records, a recording loop closes, a playing loop stops, and a stopped loop plays. Clicking also selects the loop.
-- **Shift-click**: overdub.
-- **Double-click**: overdub an audio loop, or open the editor for a MIDI loop.
+- **Click**: trigger the loop. An empty loop records, a recording loop closes, a playing loop stops, and a stopped loop plays. Clicking also selects the loop. Every click acts, so you can re-tap a loop while it runs to stop or restart it live.
+- **Shift-click**: overdub. Shift-click again to stop overdubbing.
+- **Cmd-click**: open the MIDI editor for a MIDI loop. On an audio loop it does nothing.
+- **Double-click**: no special action. The first click of a double-click has already triggered the loop.
 - **Right-click**: open the loop menu.
 
 **Right-click menu:**
@@ -150,7 +156,7 @@ In **Replace** mode, which is the default, re-recording overwrites the active ta
 
 Add a MIDI loop with **+M** on an instrument track, or from the track's **+** menu. Its clips record the MIDI that arrives at the instrument track.
 
-To edit a MIDI loop, double-click it, or right-click and choose **Edit MIDI**. The editor opens in the **Editor** dock (`E`). It has two tabs:
+To edit a MIDI loop, Cmd-click it, or right-click and choose **Edit MIDI**. The editor opens in the **Editor** dock (`E`). It has two tabs:
 
 **Length** (both views): **-** and **+** change the loop by one bar. **x2** doubles the loop and repeats the pattern into the new bars (2 bars become 4, with the same notes in bars 3-4). **/2** halves it and keeps the first half (notes that ran past the new end are shortened). Both can be undone with `⌘Z`.
 
@@ -177,7 +183,7 @@ Automation records and plays back parameter changes, such as a fader or a plug-i
 
 **Each loop has an automation layer.** Automation runs while the loop plays. Automation-only loops are hidden for now; loops of that kind in older projects are not shown on the Loops page.
 
-**The automation layer:** click **Automation** at the top (or press `A`). It opens on top of whatever is on screen (the loops, the MIDI editor or the mixer) and is see-through, so you can still see what's underneath. It shows the selected loop's lanes; select a different loop to switch. **Close** (or the **Automation** button again) hides it. Its controls:
+**The automation layer:** click **Automation** at the top (or press `A`). It opens on top of whatever is on screen (the loops, the MIDI editor or the mixer) and is see-through, so you can still see what's underneath. Clicks pass through to the loops and mixer underneath, except on the overlay's top bar and lane rows. It shows the selected loop's lanes; select a different loop to switch. **Close** (or the **Automation** button again) hides it. Its controls:
 
 - **Loop layer / Track lanes**: the selected loop's automation, or the track's own lanes (used on the timeline).
 - **Pencil**: drag to draw points freehand. Without it, click to add a point and drag points to move them (Shift-drag selects several, Alt-drag bends a segment; double-click or right-click a point to delete it).
@@ -215,11 +221,150 @@ Open the **Mixer** dock (`M`) and drag the bar above it to make it taller. Hide 
 
 **Inserting:** click an empty slot on the mixer strip, or choose **Instrument...** from an instrument track's menu. Click the plug-in to open its window.
 
+**Tempo and position:** hosted plug-ins receive the session tempo and song position, so tempo-synced effects and instruments follow ELooper.
+
 **Plug-in presets:** from a plug-in slot, choose **Presets...**. Choose **Save Preset...** to save the plug-in's current state, or pick a saved preset to load it.
 
 **Channel presets:** a channel preset captures a track's input gain, volume, pan, EQ, monitoring, MIDI effects, instrument, and pre- and post-fader inserts. Right-click the track label (or its mixer strip header) and choose **Channel Presets...**, or use the **Track** menu.
 
 Plug-in and channel presets are stored in your Application Support folder, not in the project, so they are available to every project.
+
+## Chimera — built-in synth
+
+Chimera is a multi-layer synthesizer that comes with ELooper. It needs no plug-in scan, and it is listed first under **Built in** in the instrument menu. Up to four layers can sound at once, each with its own engine, filter, envelopes, LFOs and modulation.
+
+**Adding Chimera**
+
+1. Add an instrument track: **+ Add Track** > **Instrument**, or **Track > Add Instrument Track**.
+2. Load Chimera: on the mixer strip, click **+ Instrument** and choose **Built in > Chimera (multi-engine synth)**. You can also right-click the track label and choose **Instrument...**.
+3. Click the **Chimera** chip on the strip to show or hide its window.
+
+**Top bar**
+
+- **Preset browser:** **<** and **>** step through the factory presets. The preset menu lists them by category, then your **User presets**.
+- **Save, Save as, Load:** **Save** overwrites the current user preset, or asks for a name the first time. **Save as** always asks for a name. **Load** opens a `.chimera` file.
+- **Macros:** four macros, named by each preset. Right-click one to rename it (up to 24 characters). Macros are modulation sources and can be automated.
+- **Master:** the output volume, 70% by default.
+- **Voices and meter:** the number of sounding voices, and the output level.
+
+User presets are saved as `.chimera` files in the **ELooper > Chimera Presets** folder in Application Support. Choose **Show preset folder** from the preset menu to open it.
+
+**Layers**
+
+The four numbered tabs select the layer you are editing. Each tab shows the layer's engine (or its custom name) and a power dot. Click the dot to turn a layer off or on again. Turning it on restores the last engine used. A new Chimera has layer 1 on Analog and layers 2 to 4 off. An off layer shows five engine buttons: Analog, Wavetable, FM, Sampler and Pluck.
+
+Drop a `.syx` file on the window to load it as a DX7 cartridge into the selected layer. Drop an audio file to load it into the Sampler.
+
+The **Voice** column on the left holds the layer's general settings:
+
+- **Level** and **Pan**, both automatable.
+- **Transpose** (±48 semitones) and **Fine** (±100 cents).
+- **Mode:** **Poly**, **Mono** or **Legato**. Mono and Legato play one note at a time per layer, and the most recent note takes priority.
+- **Polyphony:** 1 to 32 voices for the layer. All layers share 64 voices in total.
+- **Glide:** portamento time, from 0 to 5 seconds.
+- **Unison:** 1 to 7 voices, with **Detune** (up to 50 cents of spread) and **Spread** (stereo width).
+- **Vel sens:** how much note velocity changes the layer's loudness.
+- **Key lo / Key hi** and **Vel lo / Vel hi:** the keys and velocities the layer responds to. Give two layers different key ranges to make a split, or the same full range to layer them.
+- **Output:** **Main**, **Out 3-4**, **Out 5-6** or **Out 7-8**. Only the Main pair goes through the Chimera effects. Use **Multi-Out** on the track menu to give the other pairs their own tracks.
+- **Copy**, **Paste** and **Init:** Copy takes the whole layer, including its loaded sample or cartridge, and Paste puts it on the selected layer. Init resets the layer to a plain analog sound.
+
+**Engines**
+
+Each layer has one engine. Its controls are on the **Engine** panel.
+
+**Analog**
+
+- Two oscillators, each a sine, triangle, saw, square or noise wave. Square pulse width is adjustable from 5% to 95%.
+- Osc 2 has **Semitones** (±24) and **Fine** (±100 cents).
+- **Mix** crossfades from osc 1 (left) to osc 2 (right).
+- **Sub** adds a square wave one octave below osc 1. **Noise** adds white noise.
+- **Hard sync to osc 1** resets osc 2 each time osc 1 completes a cycle.
+
+**Wavetable**
+
+- Eight built-in tables: Basic Shapes, PWM, Harmonics, Formant, Digital, Organ, Bell and Sync Sweep. Each table morphs through 16 frames.
+- **Position** scans through the frames. Drag the frame view to change it.
+
+**FM**
+
+- A six-operator, DX7-compatible engine with 32 algorithms. Pick the algorithm with its control (1 to 32), and the diagram shows how the operators are routed.
+- **Feedback** (0 to 7) and **FM amount** (0 to 2), which scales the modulator depth.
+- Select an operator with **OP 1** to **OP 6**. Each operator has **Mode** (Ratio or Fixed), **Coarse**, **Fine**, **Detune**, **Level** and **Vel sens**, plus the rate and level of its four envelope stages.
+- **Use amp envelope:** when off, only the operator envelopes shape the sound, as on a real DX7. Loading a cartridge turns it off.
+- **Load cart (.syx)**, or drop a `.syx` file, loads either a 32-voice cartridge or a single-voice patch. A cartridge's voices appear in a grid on the right. Click one to load it.
+- **Save cart** writes the layer's voices to a `.syx` file. Without a loaded cartridge, it saves the current voice alone. Empty slots in a 32-voice file are Init voices.
+
+**Sampler**
+
+- **Load sample**, or drop an audio file (WAV, AIFF, FLAC, MP3 or Ogg). A sample can be up to 2 minutes long.
+- **Root note** is the note that plays the sample at its original pitch. It is read from the file if the file stores one, and otherwise it is note 60.
+- **Start** sets where playback begins. **Reverse** plays the sample backwards.
+- **Loop** is Off, Forward or Ping-pong, with **Loop start** and **Loop end** points.
+
+**Pluck**
+
+- A Karplus-Strong plucked string.
+- **Decay** sets the ring time, from about 0.2 to 10 seconds. **Damping** runs from bright to dark. **Pick position** sets where the string is plucked. **Noise colour** sets the excitation, from dark to bright.
+
+**Filter**
+
+Each layer has its own filter.
+
+- **Type:** Off, LP 12, LP 24, HP 12, HP 24, BP, Notch, Ladder or Comb. Off bypasses the filter.
+- **Cutoff** (20 Hz to 20 kHz) and **Resonance**, both automatable.
+- **Drive** adds saturation before the filter.
+- **Key track** sets how much the cutoff follows the played note, from 0% to 100%.
+- **Env amount** sets how far the filter envelope moves the cutoff, up to ±60 semitones.
+
+**Envelopes**
+
+Each layer has three envelopes, each with Attack, Decay, Sustain and Release:
+
+- **Amp** shapes the layer's loudness.
+- **Filter** shapes the cutoff, scaled by **Env amount**.
+- **Mod** is a source for the modulation matrix.
+
+**Modulation page**
+
+- **Layer LFO 1** and **LFO 2** belong to each layer. **Global LFO 1** and **2** are shared by all layers.
+- There are seven shapes: Sine, Triangle, Saw Up, Saw Down, Square, Sample & Hold and Smooth Random.
+- **Sync** locks the rate to the song tempo, and the rate then follows beat divisions from 1/16 to 16 beats. Without Sync, the rate runs from 0.01 to 40 Hz.
+- **Retrigger** (restart on each note) and **Fade in** (ramp up after each note) apply to the layer LFOs only.
+- **Mod matrix:** eight slots per layer. Each slot has a source, a destination and an amount from -1 to +1.
+  - Sources: LFO 1, LFO 2, Global LFO 1, Global LFO 2, Amp, Filter and Mod envelopes, Velocity, Key Track, Mod Wheel, Aftertouch, Pitch Bend, Random, and Macro 1 to 4.
+  - Destinations: Pitch, Cutoff, Resonance, Drive, Level, Pan, Pulse Width, Osc Mix, Osc 2 Pitch, Noise, Wave Position, FM Amount, Sample Start, Pluck Damping, LFO 1 Rate, LFO 2 Rate and Filter Env Amount.
+- **Pitch bend range** sets the bend range for all layers, from 0 to 24 semitones (2 by default).
+
+**Effects page**
+
+The effects apply to the Main output pair only.
+
+- **Chorus:** Rate (0.05 to 5 Hz), Depth and Mix.
+- **Delay:** **Tempo sync** switches the time from milliseconds (1 to 2000) to beat divisions up to 4 beats. Also **Feedback** (up to 95%), **Tone**, **Mix** and **Ping-pong**.
+- **Reverb:** Size, Damping, Pre-delay (0 to 200 ms), Width and Mix.
+
+Each effect has an **On** switch.
+
+**Factory presets**
+
+| Category | Presets |
+|---|---|
+| Init | Init, Sampler |
+| Pad | Warm Pad, Morph Pad, Vocal Drift |
+| Bass | Fat Bass, Acid Line, Wobble Bass, FM Bass |
+| Lead | Super Saw Lead, Square Lead, Sync Lead |
+| Keys | Glass Keys, FM E.Piano, FM Bell |
+| Brass | FM Brass |
+| Pluck | Nylon Pluck, Harp |
+| FX | Drone Machine |
+| Layered | Keys + Pad, Bass \| Keys Split |
+
+**Automation and MIDI**
+
+- **Automatable:** Macro 1 to 4, Master, and each layer's Level, Cutoff, Resonance and Pan. They appear in the automation layer's **+ Lane** menu.
+- **Mod wheel** (CC 1) drives the Mod Wheel source. **Channel pressure** drives Aftertouch. **Pitch bend** follows the pitch bend range.
+- **Sustain** (CC 64) holds notes until the pedal is released.
+- **All Notes Off** (CC 123) releases all notes. **All Sound Off** (CC 120) silences everything at once and clears the effect tails.
 
 ## Bouncing a track
 
@@ -283,6 +428,8 @@ While a button is waiting, it reads **Waiting for MIDI...**. Each mapping appear
 | `E` | Show or hide the Editor dock |
 | `T` | Switch between the Loops and Timeline pages |
 | `⌘B` | Bounce the selected track |
+| `1` to `9` | Launch scene 1 to 9 (ignored while typing in a text field) |
+| `0` | Stop all loops |
 
 In the piano roll, `⌘A`, `⌘D`, `Q`, `Delete`, `Backspace` and the arrow keys act on the selected notes, as described in [MIDI loops](#midi-loops). Undo and redo are `⌘Z`, `Shift`+`⌘Z` and `⌘Y`.
 
@@ -294,7 +441,14 @@ Use **File** to manage projects:
 - **Open...** (`⌘O`) opens an existing project.
 - **Save** (`⌘S`) saves the project.
 - **Save As...** (`⇧⌘S`) saves a copy under a new name.
+- **Open Autosave...** opens a recovered copy from the autosave folder (see below).
 
 A project is a folder with the extension `.elooper`. It holds a `session.xml` file describing tracks, loops, plug-ins and settings, and an `audio` folder with the recorded takes as WAV files. Keep the whole folder together when you move or back up a project.
+
+**Saving is safe:** ELooper writes the new project to a temporary folder, checks it can be read back, and only then swaps it in place of the old one. If anything fails, the previous save is kept. Any other files you put in the project folder yourself (notes, artwork and so on) are kept too; only `session.xml` and `audio` are replaced.
+
+**Unsaved changes:** a project with unsaved changes shows a dot (•) after its name in the title bar. When you start a new session, open a project, quit or close a window with unsaved changes, ELooper asks whether to **Save**, **Don't Save** or **Cancel**.
+
+**Autosave:** while the transport is stopped and the project has unsaved changes, ELooper saves a copy every 2 minutes into the ELooper **Autosave** folder in Application Support. The copy does not change your project file or its unsaved state. To recover one, choose **File > Open Autosave...**. A recovered project is detached from its original file, so Save asks where to put it rather than overwriting the autosave.
 
 Plug-in presets and channel presets are not stored in the project. See [Plug-ins and presets](#plug-ins-and-presets).

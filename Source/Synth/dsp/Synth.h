@@ -5,6 +5,7 @@
 // Pure C++17, real-time safe: process() never allocates, locks or frees.
 #include "Synth/dsp/Modulation.h"
 #include <atomic>
+#include <mutex>
 
 namespace el::chimera {
 
@@ -17,13 +18,15 @@ class PatchExchange {
 public:
     // ---- message thread
     void publish (std::shared_ptr<const Patch> p);
-    std::shared_ptr<const Patch> latest() const { return current; }
+    std::shared_ptr<const Patch> latest() const { std::lock_guard<std::mutex> g (lock); return current; }
     void collect();                              // frees patches the audio thread can't be using
     // ---- audio thread
     const Patch* acquire() const noexcept { return live.load (std::memory_order_acquire); }
     void blockDone() noexcept { epoch.fetch_add (1, std::memory_order_acq_rel); }
 private:
+    void collectLocked();
     struct Retired { std::shared_ptr<const Patch> patch; uint64_t at; };
+    mutable std::mutex lock;   // publish/collect may come from a host's state thread as well as the UI
     std::shared_ptr<const Patch> current;
     std::vector<Retired> retired;
     std::atomic<const Patch*> live { nullptr };

@@ -191,3 +191,36 @@ EL_TEST (synth_dx7_held_release_level_cannot_stick)
     r.run ((int) (13.0 * 48000 / 256));
     EL_CHECK (r.s.activeVoiceCount() == 0);
 }
+
+EL_TEST (synth_mono_stack_overflow_releases)
+{
+    // More than 16 overlapping mono notes: releasing them all must still end the voice.
+    Patch p;
+    p.layers[0].mode = VoiceMode::Mono;
+    p.layers[0].ampEnv = { 0.001f, 0.1f, 0.8f, 0.02f };
+    Rig r (p);
+    std::vector<MidiEvent> ons, offs;
+    for (int n = 40; n < 60; ++n) { ons.push_back (on (n)); offs.push_back (offEv (n)); }
+    r.run (2, ons);
+    EL_CHECK (r.s.activeVoiceCount() == 1);
+    r.run (1, offs);
+    r.run (100);
+    EL_CHECK (r.s.activeVoiceCount() == 0);
+}
+
+EL_TEST (synth_legato_pedal_keeps_held_key)
+{
+    // Legato: a key released under the pedal, then a new legato key; lifting the pedal must not
+    // release the key that is still held.
+    Patch p;
+    p.layers[0].mode = VoiceMode::Legato;
+    p.layers[0].ampEnv = { 0.001f, 0.1f, 0.8f, 0.02f };
+    Rig r (p);
+    r.run (2, { { 0, 0xB0, 64, 127 }, on (60) });
+    r.run (2, { offEv (60) });
+    r.run (2, { on (64) });
+    r.run (2, { { 0, 0xB0, 64, 0 } });
+    r.run (100);
+    EL_CHECK (r.s.activeVoiceCount() == 1);
+    EL_CHECK (r.run (4) > 0.01);
+}

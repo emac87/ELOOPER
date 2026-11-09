@@ -66,14 +66,21 @@ LiveParams LiveParams::fromPatch (const Patch& p) noexcept
 void PatchExchange::publish (std::shared_ptr<const Patch> p)
 {
     if (! p) return;
+    std::lock_guard<std::mutex> g (lock);
     live.store (p.get(), std::memory_order_release);
     // Any block that loaded the old pointer started before now, so it ends at epoch > `at`.
     if (current) retired.push_back ({ current, epoch.load (std::memory_order_acquire) });
     current = std::move (p);
-    collect();
+    collectLocked();
 }
 
 void PatchExchange::collect()
+{
+    std::lock_guard<std::mutex> g (lock);
+    collectLocked();
+}
+
+void PatchExchange::collectLocked()
 {
     const uint64_t e = epoch.load (std::memory_order_acquire);
     retired.erase (std::remove_if (retired.begin(), retired.end(), [e] (const Retired& r) { return e > r.at + 1; }),
@@ -294,8 +301,9 @@ void Synth::noteOn (int note, int velocity, const Patch& p) noexcept
 
         if (lp.mode != VoiceMode::Poly) {
             // Mono / legato: one voice per layer, last-note priority with a note stack.
-            if (ls.stackSize < 16) {
+            {
                 int k = 0; for (int i = 0; i < ls.stackSize; ++i) if (ls.monoStack[i] != note) ls.monoStack[k++] = ls.monoStack[i];
+                if (k == 16) { for (int i = 1; i < k; ++i) ls.monoStack[i - 1] = ls.monoStack[i]; --k; }   // full: forget the oldest
                 ls.stackSize = k;
                 ls.monoStack[ls.stackSize++] = note;
             }
@@ -303,7 +311,7 @@ void Synth::noteOn (int note, int velocity, const Patch& p) noexcept
             for (auto& v : voices) if (v->active && v->layer == L) { if (! mv || v->order > mv->order) mv = v.get(); }
             for (auto& v : voices) if (v->active && v->layer == L && v.get() != mv) releaseVoice (*v);   // keep one
             if (mv && ! mv->releasing && lp.mode == VoiceMode::Legato && mv->engine == lp.engine) {
-                mv->note = note; mv->targetPitch = (float) note; mv->keyDown = true; mv->velocity = vel;
+                mv->note = note; mv->targetPitch = (float) note; mv->keyDown = true; mv->sustained = false; mv->velocity = vel;
                 mv->order = ++noteCounter;
                 if (lp.glide <= 0.0f) mv->pitch = (float) note;
                 ls.lastPitch = (float) note;
@@ -327,8 +335,8 @@ void Synth::noteOff (int note, const Patch& p) noexcept
         const auto& lp = p.layers[(size_t) L];
         auto& ls = layerState[L];
         if (lp.mode != VoiceMode::Poly) {
-            int k = 0; for (int i = 0; i < ls.stackSize; ++i) if (ls.monoStack[i] != note) ls.monoStack[k++] = ls.monoStack[i];
             const bool wasTop = ls.stackSize > 0 && ls.monoStack[ls.stackSize - 1] == note;
+            int k = 0; for (int i = 0; i < ls.stackSize; ++i) if (ls.monoStack[i] != note) ls.monoStack[k++] = ls.monoStack[i];
             ls.stackSize = k;
             for (auto& v : voices) {
                 if (! v->active || v->layer != L || v->releasing || v->note != note) continue;

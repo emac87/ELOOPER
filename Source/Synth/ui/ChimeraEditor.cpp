@@ -55,9 +55,10 @@ public:
         });
     }
 
+    int shownVoices = -1;
     void setActivity (int nVoices, float peak)
     {
-        voices->setText ("Voices " + juce::String (nVoices));
+        if (nVoices != shownVoices) { shownVoices = nVoices; voices->setText ("Voices " + juce::String (nVoices)); }
         meter->setLevel (peak);
     }
 
@@ -471,7 +472,7 @@ void ChimeraEditor::tick()
     topBar->pollAll();
     topBar->setActivity (proc.activeVoices(), proc.outputPeak());
     layerTabs->poll();
-    for (auto* pn : allPanels) pn->pollAll();
+    for (auto* pn : allPanels) if (pn->isVisible()) pn->pollAll();   // hidden pages catch up within a tick of showing
     for (auto& b : pageButtons) b->poll();
 }
 

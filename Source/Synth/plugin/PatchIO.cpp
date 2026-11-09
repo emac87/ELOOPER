@@ -268,9 +268,10 @@ void readLayerSample (const juce::XmlElement& e, Patch& p, int i, juce::StringAr
         return;
     }
 
-    auto copy = std::make_shared<SampleData> (*loaded);
-    copy->rootNote = getI (e, "rootNote", copy->rootNote, 0, 127);
-    p.samples[(size_t) i] = copy;
+    // loaded is freshly decoded and not shared yet, so set the root in place rather than copying the audio
+    auto fresh = std::const_pointer_cast<SampleData> (loaded);
+    fresh->rootNote = getI (e, "rootNote", fresh->rootNote, 0, 127);
+    p.samples[(size_t) i] = std::move (loaded);
 }
 
 void readLayerCart (const juce::XmlElement& e, Patch& p, int i, juce::StringArray* warnings)

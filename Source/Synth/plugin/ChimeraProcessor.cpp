@@ -39,6 +39,8 @@ juce::PluginDescription ChimeraProcessor::makeDescription()
     return d;
 }
 
+namespace { const std::vector<Patch>& factory(); }
+
 ChimeraProcessor::ChimeraProcessor()
     : juce::AudioPluginInstance (BusesProperties()
           .withOutput ("Main", juce::AudioChannelSet::stereo(), true)
@@ -64,8 +66,7 @@ ChimeraProcessor::ChimeraProcessor()
     midiScratch.resize (4096);
     WavetableBank::get();   // build the tables now, off the audio thread
 
-    const auto presets = makeFactoryPresets();
-    if (! presets.empty()) working = presets.front();
+    if (! factory().empty()) working = factory().front();
     syncParamsFromPatch();
     publish();
 }
@@ -75,9 +76,12 @@ ChimeraProcessor::~ChimeraProcessor() = default;
 bool ChimeraProcessor::isBusesLayoutSupported (const BusesLayout& layout) const
 {
     if (layout.outputBuses.isEmpty() || layout.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) return false;
+    // Enabled aux pairs must be a contiguous run after Main: the synth maps output pair N to channels 2N, 2N+1.
+    bool gap = false;
     for (int i = 1; i < layout.outputBuses.size(); ++i) {
         const auto& set = layout.outputBuses.getReference (i);
-        if (! set.isDisabled() && set != juce::AudioChannelSet::stereo()) return false;
+        if (set.isDisabled()) { gap = true; continue; }
+        if (gap || set != juce::AudioChannelSet::stereo()) return false;
     }
     return layout.inputBuses.isEmpty() || layout.getMainInputChannelSet().isDisabled();
 }
@@ -93,7 +97,10 @@ void ChimeraProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     int numEvents = 0;
     const int cap = (int) midiScratch.size();
     for (const auto meta : midi) {
-        if (numEvents >= cap) break;
+        if (numEvents >= cap) {   // too dense to keep: end on all-notes-off so nothing hangs
+            midiScratch[(size_t) cap - 1] = { buffer.getNumSamples() - 1, 0xB0, 123, 0 };
+            break;
+        }
         const auto* d = meta.data;
         if (meta.numBytes < 1 || meta.numBytes > 3) continue;
         midiScratch[(size_t) numEvents++] = { juce::jlimit (0, buffer.getNumSamples() - 1, meta.samplePosition),
@@ -275,12 +282,16 @@ void ChimeraProcessor::loadFactoryPreset (int i)
     if (i < 0 || i >= numFactoryPresets()) return;
     currentProgram = i;
     setPatch (factory()[(size_t) i]);
+    for (auto* m : macros) m->setValueNotifyingHost (0.0f);   // presets start from neutral macros
 }
 
 juce::File ChimeraProcessor::presetFolder()
 {
-    auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("ELooper").getChildFile ("Chimera Presets");
+    auto base = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory);
+   #if JUCE_MAC
+    base = base.getChildFile ("Application Support");   // userApplicationDataDirectory is ~/Library on macOS
+   #endif
+    auto dir = base.getChildFile ("ELooper").getChildFile ("Chimera Presets");
     dir.createDirectory();
     return dir;
 }
