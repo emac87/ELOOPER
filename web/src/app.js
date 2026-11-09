@@ -207,6 +207,9 @@ function buildTop() {
   const t = $('#top'); t.innerHTML = '';
   const r1 = el('div', 'row', t);
   const wm = el('div', 'wordmark', r1, 'CHIMERA'); const ln = el('span', 'wmLine', wm); for (let i = 0; i < 4; i++) el('i', '', ln);
+  const pw = el('button', 'pwr' + (powered ? ' on' : ''), r1); pw.id = 'power'; pw.title = 'Power: turn Chimera on/off'; pw.setAttribute('aria-label', 'Power'); pw.setAttribute('aria-pressed', String(powered));
+  pw.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.6A8.5 8.5 0 1 0 16.5 5.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M12 2.5v9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+  pw.onclick = () => setPower(!powered);
   const prev = el('button', '', r1, '<'); prev.title = 'Previous preset'; prev.setAttribute('aria-label', 'Previous preset');
   const sel = el('select', '', r1); sel.id = 'preset'; sel.title = 'Preset browser'; sel.setAttribute('aria-label', 'Preset');
   const next = el('button', '', r1, '>'); next.title = 'Next preset'; next.setAttribute('aria-label', 'Next preset');
@@ -326,6 +329,12 @@ function layerColumn(parent) {
 }
 
 function pageSound(m) {
+  const eb = el('div', 'engBar', m); el('span', 'engLbl', eb, 'ENGINE'); eb.style.setProperty('--lc', LAYER_COL[layer]);
+  const eg = el('div', 'engBtns', eb);
+  [1, 2, 3, 4, 5, 0].forEach(v => {
+    const b = el('button', 'engBtn' + (v === 0 ? ' off' : '') + (L().engine === v ? ' sel' : ''), eg, v === 0 ? 'Off' : ENGINES[v]); b.dataset.engine = v;
+    b.onclick = () => { if (L().engine === v) return; if (L().engine) lastEngine[layer] = L().engine; L().engine = v; if (v) lastEngine[layer] = v; markDirty(); buildTabs(); renderMain(); };
+  });
   const cols = el('div', 'cols', m);
   layerColumn(cols);
   const right = el('div', 'stack', cols);
@@ -617,11 +626,23 @@ function pageFx(m) {
 
 /* ---------- keyboard / MIDI ---------- */
 let kbBase = 60, kbVel = 100, held = {}; const keyEls = {};
-function midiOut(a) { if (node) post({ type: 'midi', data: a }); }
+var powered = true;
+function midiOut(a) { if (!powered) return; if (node) post({ type: 'midi', data: a }); }
 function vis(n, on) { const k = keyEls[n]; if (k) k.classList.toggle('down', on); }
 var kbOctaves = 4;
-function noteOn(src, n) { if (n < 0 || n > 127) return; if (held[src] === n) return; if (held[src] != null) noteOff(src); held[src] = n; vis(n, true); midiOut([0x90, n, kbVel]); }
+function noteOn(src, n) { if (!powered) return; if (n < 0 || n > 127) return; if (held[src] === n) return; if (held[src] != null) noteOff(src); held[src] = n; vis(n, true); midiOut([0x90, n, kbVel]); }
 function noteOff(src) { const n = held[src]; if (n == null) return; delete held[src]; if (!Object.values(held).includes(n)) vis(n, false); midiOut([0x80, n, 0]); }
+function setPower(on) {
+  powered = on;
+  const b = $('#power'); if (b) { b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+  if (on) { unlockAudio(); return; }
+  post({ type: 'panic' }); releaseAllKeys();
+  const v = $('#voices'); if (v) v.textContent = '0'; const p = $('#peak'); if (p) p.style.width = '0%';
+  try { if (silentEl) silentEl.pause(); } catch (e) {}
+  if (audioCtx && audioCtx.state === 'running') { try { const pr = audioCtx.suspend(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} }
+}
+function releaseAllKeys() { Object.keys(held).forEach(k => vis(held[k], false)); held = {}; Object.keys(kbPtr).forEach(k => delete kbPtr[k]); document.querySelectorAll('.key.down').forEach(k => k.classList.remove('down')); }
+var kbPtr = {};
 function heldClear() { Object.keys(held).forEach(k => vis(held[k], false)); held = {}; }
 function buildKeys() {
   const f = $('#keys'); f.innerHTML = '';
@@ -661,12 +682,20 @@ function buildKeys() {
     if (oct !== kbOctaves) rebuild(); }, 150); });
   const octave = d => { heldClear(); Object.keys(held).forEach(s => noteOff(s)); kbBase = clamp(kbBase + d * 12, 24, 96); rebuild(); };
   dn.onclick = () => octave(-1); up.onclick = () => octave(1); buildKeys.octave = octave;
-  const ptr = {};
+  const ptr = kbPtr;
   const noteAt = e => { const t = document.elementFromPoint(e.clientX, e.clientY); return t && t.dataset && t.dataset.note != null && kb.contains(t) ? +t.dataset.note : null; };
-  kb.addEventListener('pointerdown', e => { const n = noteAt(e); if (n == null) return; kb.setPointerCapture(e.pointerId); ptr[e.pointerId] = 1; noteOn('p' + e.pointerId, n); e.preventDefault(); });
-  kb.addEventListener('pointermove', e => { if (!ptr[e.pointerId]) return; const n = noteAt(e); if (n != null) noteOn('p' + e.pointerId, n); });
-  const pu = e => { if (ptr[e.pointerId]) { delete ptr[e.pointerId]; noteOff('p' + e.pointerId); } };
-  kb.addEventListener('pointerup', pu); kb.addEventListener('pointercancel', pu);
+  const stop = e => { if (e.cancelable) e.preventDefault(); };
+  ['touchstart', 'touchmove', 'contextmenu', 'selectstart', 'dragstart'].forEach(t => kb.addEventListener(t, stop, { passive: false }));
+  ['selectstart', 'dragstart', 'contextmenu'].forEach(t => f.addEventListener(t, ev => { if (!['INPUT', 'SELECT', 'TEXTAREA'].includes(ev.target.tagName)) stop(ev); }, { passive: false }));
+  const rel = id => { if (ptr[id]) { delete ptr[id]; noteOff('p' + id); } };
+  kb.addEventListener('pointerdown', e => { const n = noteAt(e); if (n == null) return; try { kb.setPointerCapture(e.pointerId); } catch (x) {} ptr[e.pointerId] = 1; noteOn('p' + e.pointerId, n); e.preventDefault(); });
+  kb.addEventListener('pointermove', e => { if (!ptr[e.pointerId]) return; const n = noteAt(e); if (n != null) noteOn('p' + e.pointerId, n); else rel(e.pointerId); });
+  const pu = e => rel(e.pointerId);
+  kb.addEventListener('pointerup', pu); kb.addEventListener('pointercancel', pu); kb.addEventListener('lostpointercapture', pu);
+  window.addEventListener('pointerup', pu, true); window.addEventListener('pointercancel', pu, true);
+  const relAll = () => Object.keys(ptr).forEach(rel);
+  window.addEventListener('blur', relAll);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) relAll(); });
 }
 const KEYMAP = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyF: 5, KeyT: 6, KeyG: 7, KeyY: 8, KeyH: 9, KeyU: 10, KeyJ: 11, KeyK: 12, KeyO: 13, KeyL: 14, KeyP: 15, Semicolon: 16 };
 function typing(t) { return t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || (t.tagName === 'INPUT' && !['range', 'checkbox', 'button', 'file'].includes(t.type)) || t.isContentEditable); }
@@ -725,7 +754,7 @@ function onMsg(ev) {
     case 'ready': engineReady = true; clearTimeout(engineWatchdog); presets = m.presets || []; buildPresetList(); if (m.json) applyIncoming(JSON.parse(m.json)); break;
     case 'patch': { const o = JSON.parse(m.json); if (dragging) pendingPatch = o; else applyIncoming(o); break; }
     case 'presetIndex': presetIndex = m.index; if (topEls.sel) topEls.sel.value = String(presetIndex); break;
-    case 'meter': { const v = $('#voices'), p = $('#peak'); if (v) v.textContent = m.voices; if (p) { const pk = clamp(m.peak, 0, 1.2); p.style.width = Math.min(pk, 1) * 100 + '%'; p.style.background = pk > .95 ? 'var(--rec)' : pk > .7 ? 'var(--warn)' : 'var(--ok)'; } break; }
+    case 'meter': { if (!powered) m = { voices: 0, peak: 0 }; const v = $('#voices'), p = $('#peak'); if (v) v.textContent = m.voices; if (p) { const pk = clamp(m.peak, 0, 1.2); p.style.width = Math.min(pk, 1) * 100 + '%'; p.style.background = pk > .95 ? 'var(--rec)' : pk > .7 ? 'var(--warn)' : 'var(--ok)'; } break; }
     case 'cartFile': download(m.name || 'chimera-cart.syx', m.bytes, 'application/octet-stream'); break;
     case 'error': toast(m.message || 'Error'); break;
   }
@@ -755,7 +784,7 @@ function unlockAudio() {
   } catch (e) {}
   if (audioCtx && audioCtx.state !== 'running') { try { const pr = audioCtx.resume(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} }
 }
-['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, () => { if (audioCtx) unlockAudio(); }, true));
+['pointerdown', 'touchend', 'keydown'].forEach(t => document.addEventListener(t, () => { if (audioCtx && powered) unlockAudio(); }, true));
 
 async function startAudio() {
   if (node || blockedShown) return;
@@ -830,4 +859,5 @@ if (!window.ChimeraAudio) {
 buildTop(); buildKeys(); wireInputs();
 $('#startOverlay').addEventListener('click', startAudio);
 $('#startOverlay').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') startAudio(); });
+window.__chimeraState = () => ({ ctx: audioCtx && audioCtx.state, silentPaused: silentEl ? silentEl.paused : null, powered });
 })();
