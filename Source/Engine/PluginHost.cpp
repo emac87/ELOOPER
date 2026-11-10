@@ -1,5 +1,4 @@
 #include "Engine/PluginHost.h"
-#include "Synth/plugin/ChimeraProcessor.h"
 
 namespace el {
 
@@ -310,15 +309,22 @@ static std::vector<juce::PluginDescription> filtered (const juce::KnownPluginLis
 
 std::vector<juce::PluginDescription> PluginHost::instruments() const
 {
-    // The built-in Chimera synth is always available (no scan needed) and listed first.
-    auto list = filtered (knownList, [] (const auto& d) { return d.isInstrument; });
-    list.insert (list.begin(), el::chimera::ChimeraProcessor::makeDescription());
-    return list;
+    return filtered (knownList, [] (const auto& d) { return d.isInstrument; });
 }
 
-bool PluginHost::isBuiltIn (const juce::PluginDescription& d)
+bool PluginHost::isLegacyBuiltIn (const juce::PluginDescription& d)
 {
-    return d.pluginFormatName == el::chimera::ChimeraProcessor::kFormatName;
+    return d.pluginFormatName == "ELooper" || d.fileOrIdentifier == "builtin:chimera";
+}
+
+juce::PluginDescription PluginHost::resolveLegacy (const juce::PluginDescription& d) const
+{
+    if (! isLegacyBuiltIn (d)) return d;
+    for (const auto& t : knownList.getTypes())
+        if (t.isInstrument && t.name.equalsIgnoreCase (d.name.isNotEmpty() ? d.name : juce::String ("Chimera"))
+            && t.manufacturerName.equalsIgnoreCase ("ELooper"))
+            return t;
+    return d;
 }
 
 std::vector<juce::PluginDescription> PluginHost::effects() const
@@ -333,19 +339,12 @@ std::vector<juce::PluginDescription> PluginHost::midiEffects() const
 
 void PluginHost::createInstance (const juce::PluginDescription& desc, double sampleRate, int blockSize, CreateCallback cb)
 {
-    if (isBuiltIn (desc)) {
-        // Built-in instruments are created here directly, but still delivered asynchronously
-        // like a hosted plug-in so callers see one behaviour.
-        if (desc.fileOrIdentifier == el::chimera::ChimeraProcessor::kIdentifier || desc.name == "Chimera") {
-            // std::function needs a copyable lambda, so the instance travels in a shared holder.
-            auto holder = std::make_shared<std::unique_ptr<juce::AudioPluginInstance>> (std::make_unique<el::chimera::ChimeraProcessor>());
-            (*holder)->setRateAndBufferSizeDetails (sampleRate, blockSize);
-            juce::MessageManager::callAsync ([holder, callback = std::move (cb)] {
-                if (callback) callback (std::move (*holder), {});
-            });
-        } else {
-            juce::MessageManager::callAsync ([callback = std::move (cb)] { if (callback) callback (nullptr, "Unknown built-in instrument."); });
-        }
+    if (isLegacyBuiltIn (desc)) {
+        // A project from when Chimera was built in, and the Chimera AU has not been scanned yet.
+        juce::MessageManager::callAsync ([callback = std::move (cb)] {
+            if (callback) callback (nullptr, "Chimera is no longer built into ELooper. Install the Chimera Audio Unit "
+                                             "(Chimera-macos.zip), choose Scan for Plug-ins, then open the project again.");
+        });
         return;
     }
 

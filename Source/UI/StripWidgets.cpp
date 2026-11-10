@@ -112,7 +112,8 @@ void PluginIconButton::refresh()
     if (interactive) {
         auto slot = icons::iconSlot (*t);
         setTooltip (slot != nullptr ? slot->name() + "  (click: show / hide plug-in, right-click: all plug-ins on this track)"
-                                    : icons::kindName (icons::channelKind (t->kind)) + " channel  (no plug-in loaded)");
+                                    : icons::kindName (icons::channelKind (t->kind)) + " channel  (no plug-in loaded"
+                                      + juce::String (onEmptyClick ? ": click to add one)" : ")"));
     }
     repaint();
 }
@@ -148,6 +149,7 @@ void PluginIconButton::mouseUp (const juce::MouseEvent& e)
     auto t = controller.session().findTrack (trackId);
     if (t == nullptr) return;
     if (auto slot = icons::iconSlot (*t)) controller.togglePluginEditor (slot->id);
+    else if (onEmptyClick) { onEmptyClick(); return; }   // may rebuild the page: touch nothing after
     poll();
 }
 

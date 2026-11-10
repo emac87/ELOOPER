@@ -397,6 +397,7 @@ void EngineController::loadSession (std::unique_ptr<Session> s, std::function<vo
     Session* expected = sessionPtr.get();
     for (auto& [trackId, slot] : todo) {
         PluginSlotPtr sp = slot;
+        sp->description = plugins.resolveLegacy (sp->description);   // old built-in Chimera -> Chimera AU
         plugins.createInstance (sp->description, audioEngine->sampleRate(), maxBlock(),
             [this, sp, expected, remaining, errors, onDone] (std::unique_ptr<juce::AudioPluginInstance> inst, const juce::String& err) {
                 if (sessionPtr.get() != expected) return;     // a different session was loaded meanwhile

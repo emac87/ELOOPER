@@ -356,7 +356,7 @@ static void testChimeraProcessor() {
     std::printf ("chimera processor\n");
     using namespace el::chimera;
     auto proc = std::make_unique<ChimeraProcessor>();
-    CHECK (PluginHost::isBuiltIn (proc->getPluginDescription()));
+    CHECK (PluginHost::isLegacyBuiltIn (proc->getPluginDescription()));   // old saved projects map to the AU
     CHECK (PluginHost::enableMultiOut (*proc) == 8);
     proc->prepareToPlay (48000.0, 256);
     juce::AudioBuffer<float> buf (8, 256);

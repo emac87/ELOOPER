@@ -27,8 +27,12 @@ public:
     void saveKnownList();
 
     // Sorted, filtered views for menus.
-    std::vector<juce::PluginDescription> instruments() const;   // built-in Chimera first
-    static bool isBuiltIn (const juce::PluginDescription&);
+    std::vector<juce::PluginDescription> instruments() const;
+    // Projects saved while Chimera was built into ELooper name it "builtin:chimera". Chimera is
+    // now an Audio Unit: this swaps such a description for the scanned Chimera AU (state is the
+    // same format, so the sound comes back). Anything else is returned unchanged.
+    juce::PluginDescription resolveLegacy (const juce::PluginDescription&) const;
+    static bool isLegacyBuiltIn (const juce::PluginDescription&);
     std::vector<juce::PluginDescription> effects() const;      // audio effects
     std::vector<juce::PluginDescription> midiEffects() const;
 

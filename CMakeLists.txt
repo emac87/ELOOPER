@@ -120,8 +120,8 @@ juce_add_gui_app(ELooper
 )
 
 file(GLOB ELOOPER_APP_SOURCES CONFIGURE_DEPENDS
-    Source/Model/*.cpp Source/Engine/*.cpp Source/UI/*.cpp Source/Platform/*.cpp Source/Main.cpp
-    Source/Synth/plugin/*.cpp Source/Synth/ui/*.cpp)
+    Source/Model/*.cpp Source/Engine/*.cpp Source/UI/*.cpp Source/Platform/*.cpp Source/Main.cpp)
+# Chimera is no longer built into the app: it is loaded as its own Audio Unit (target Chimera above).
 target_sources(ELooper PRIVATE ${ELOOPER_APP_SOURCES})
 if(APPLE)
     file(GLOB ELOOPER_MAC_SOURCES CONFIGURE_DEPENDS Source/Platform/*.mm)
@@ -155,7 +155,6 @@ endif()
 
 target_link_libraries(ELooper PRIVATE
     elooper_core
-    chimera_dsp
     Ableton::Link
     juce::juce_audio_utils
     juce::juce_audio_devices

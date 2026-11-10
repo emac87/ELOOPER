@@ -2,6 +2,7 @@
 #include "UI/StripWidgets.h"
 #include "UI/Theme.h"
 #include "UI/TrackMenu.h"
+#include "UI/PluginBrowser.h"
 
 namespace el {
 
@@ -9,10 +10,14 @@ TrackHeader::TrackHeader (EngineController& c, Selection& s, PresetManager& p, I
     : controller (c), selection (s), presets (p), trackId (id)
 {
     icon = std::make_unique<PluginIconButton> (controller, trackId);
-    icon->interactive = false;                 // the loop page has no controls: just the type icon
-    icon->setInterceptsMouseClicks (false, false);
+    icon->onPressed = [this] { selection.select (trackId, kInvalidId); };
+    if (auto t = controller.session().findTrack (trackId); t != nullptr && t->kind == TrackKind::Instrument) {
+        auto* ctl = &controller; const Id id = trackId;
+        juce::Component::SafePointer<PluginIconButton> btn (icon.get());
+        icon->onEmptyClick = [ctl, id, btn] { if (btn != nullptr) showPluginMenu (*ctl, id, FxChain::Instrument, -1, btn.getComponent()); };
+    }
     addAndMakeVisible (*icon);
-    setTooltip ("Click: select. Double-click: rename. Right-click: track menu. Drag sideways: reorder.");
+    setTooltip ("Click the name: rename. Click: select. Right-click: track menu. Drag sideways: reorder.");
     setSize (width, rowHeight);
     refresh();
 }
@@ -47,9 +52,12 @@ void TrackHeader::refresh()
     repaint();
 }
 
+void TrackHeader::poll() { icon->poll(); }
+
 void TrackHeader::resized()
 {
-    icon->setBounds (6, 11, 24, 24);
+    icon->setBounds (5, 9, 28, 28);
+    nameR = { 34, 8, getWidth() - 38, 30 };
     folderR = numOuts > 0 ? juce::Rectangle<int> (5, getHeight() - 25, getWidth() - 10, 20) : juce::Rectangle<int>();
 }
 
@@ -113,7 +121,14 @@ void TrackHeader::mouseDrag (const juce::MouseEvent& e)
 
 void TrackHeader::mouseUp (const juce::MouseEvent& e)
 {
-    if (! dragging) return;
+    if (! dragging) {
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+        // A plain left-click on the name renames (the dialog is async, so this header may go safely).
+        if (! e.mods.isPopupMenu() && e.getNumberOfClicks() == 1 && ! e.mouseWasDraggedSinceMouseDown()
+            && nameR.contains (e.getMouseDownPosition()) && nameR.contains (e.getPosition()))
+            renameTrack (controller, trackId);
+        return;
+    }
     dragging = false;
     setMouseCursor (juce::MouseCursor::NormalCursor);
     setAlpha (1.0f);
@@ -122,7 +137,9 @@ void TrackHeader::mouseUp (const juce::MouseEvent& e)
 
 void TrackHeader::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (! e.mods.isPopupMenu() && ! folderR.contains (e.getPosition())) renameTrack (controller, trackId);
+    // Double-click on the rest of the label also renames (the name itself already did on click).
+    if (! e.mods.isPopupMenu() && ! folderR.contains (e.getPosition()) && ! nameR.contains (e.getPosition()))
+        renameTrack (controller, trackId);
 }
 
 } // namespace el

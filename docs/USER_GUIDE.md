@@ -15,7 +15,7 @@ This guide covers day-to-day use of ELooper on macOS. For building the app, see 
 9. [Automation](#automation)
 10. [Mixer and routing](#mixer-and-routing)
 11. [Plug-ins and presets](#plug-ins-and-presets)
-12. [Chimera — built-in synth](#chimera--built-in-synth)
+12. [Chimera synth](#chimera--built-in-synth)
 13. [Chimera outside ELooper](#chimera-outside-elooper)
 14. [Bouncing a track](#bouncing-a-track)
 15. [Timeline and arrangement record](#timeline-and-arrangement-record)
@@ -65,7 +65,7 @@ There are five kinds of track:
 | Kind | What it does |
 |---|---|
 | **Audio** | Records from an audio input. |
-| **Instrument** | Takes MIDI input and plays a software instrument: an Audio Unit, or the built-in [Chimera](#chimera--built-in-synth) synth. Its MIDI loops record that input. |
+| **Instrument** | Takes MIDI input and plays a software instrument: an Audio Unit, such as the [Chimera](#chimera--built-in-synth) synth. Its MIDI loops record that input. |
 | **Bus** | Receives sends and track outputs. It can record what it receives. |
 | **Master** | The final mix. It goes to the hardware output pair. Every session has one. |
 | **AuxOut** | An extra stereo output of a multi-output instrument. See [Mixer and routing](#mixer-and-routing). |
@@ -76,7 +76,7 @@ A new session starts with one audio track and one instrument track.
 
 **Adding loops:** each track row ends with a **+** button. It adds an audio loop (MIDI loop on instrument tracks). Automation loops are hidden for now; automation will come back in a different form.
 
-**Track label:** the label under each column shows the track's colour, its type icon (synth, drums, sampler, EQ and so on, or the channel type), its name and its input (or instrument). Click it to select the track, double-click to rename it, right-click for the track menu, and drag it sideways to reorder tracks. A multi-out instrument has a **Show / Hide outs** button; its outputs and Sum folder are the columns right after it.
+**Track label:** the label under each column shows the track's colour, its type icon (synth, drums, sampler, EQ and so on, or the channel type), its name and its input (or instrument). Click the icon to show or hide the track's plug-in window (right-click it to pick any plug-in on the track; on an empty instrument track it opens the instrument menu). Click the name to rename the track. Click anywhere else on the label to select the track, right-click anywhere else for the track menu, and drag sideways to reorder tracks. A multi-out instrument has a **Show / Hide outs** button; its outputs and Sum folder are the columns right after it.
 
 **Track right-click menu** (for Audio, Instrument and Bus tracks where listed):
 
@@ -232,15 +232,15 @@ Plug-in and channel presets are stored in your Application Support folder, not i
 
 ## Chimera — built-in synth
 
-Chimera is a multi-layer synthesizer that comes with ELooper. It needs no plug-in scan, and it is listed first under **Built in** in the instrument menu. Up to four layers can sound at once, each with its own engine, filter, envelopes, LFOs and modulation.
+Chimera is a multi-layer synthesizer made alongside ELooper. It is no longer built into ELooper: install the Chimera Audio Unit (see [Chimera outside ELooper](#chimera-outside-elooper)), choose **Scan for Plug-ins...**, then pick it from the instrument menu under **AU Instruments > ELooper**. Projects saved with the old built-in Chimera load the Audio Unit with the same sound once it has been scanned. Up to four layers can sound at once, each with its own engine, filter, envelopes, LFOs and modulation.
 
 **Adding Chimera**
 
 1. Add an instrument track: **+ Add Track** > **Instrument**, or **Track > Add Instrument Track**.
-2. Load Chimera: on the mixer strip, click **+ Instrument** and choose **Built in > Chimera (multi-engine synth)**. You can also right-click the track label and choose **Instrument...**.
+2. Load Chimera: on the mixer strip, click **+ Instrument** and choose **AU Instruments > ELooper > Chimera**. You can also right-click the track label and choose **Instrument...**.
 3. Click the **Chimera** chip on the strip to show or hide its window.
 
-In the instrument menu, **Random instrument** sits under the Built in entries. It loads a random instrument from Chimera plus every scanned Audio Unit instrument.
+In the instrument menu, **Random instrument** loads a random instrument from every scanned Audio Unit instrument.
 
 **Top bar**
 

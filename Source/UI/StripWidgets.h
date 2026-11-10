@@ -58,6 +58,7 @@ class PluginIconButton : public juce::Component, public juce::SettableTooltipCli
 public:
     PluginIconButton (EngineController&, Id trackId);
     std::function<void()> onPressed;
+    std::function<void()> onEmptyClick;   // left-click when the track has no plug-in (e.g. open the picker)
     bool interactive = true;
     void refresh();
     void poll();
