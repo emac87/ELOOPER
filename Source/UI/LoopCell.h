@@ -1,7 +1,6 @@
 #pragma once
-// One loop on the loop screen: a rounded box in the loop colour with a progress ring. A track's
-// first box also carries the track controls (see TrackControls): it then draws a smaller ring
-// between the controls' top and bottom bands.
+// One loop on the loop screen: a rounded box in the loop colour with a progress ring. It only
+// triggers its loop; the track controls are on the label under the column.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
 #include "Engine/MidiMapping.h"
@@ -18,7 +17,6 @@ public:
     Id getTrackId() const noexcept { return trackId; }
 
     void refresh();                 // re-read name / colour / type (call on Loop / Track changes)
-    void setHasControls (bool);     // leave room for the track controls (first box of a column)
     void poll (bool blinkOn);       // 30 Hz: repaints only if the status changed
 
     // (trackId, loopId, midiEditor): open the MIDI editor (true) or the automation panel (false).
@@ -46,7 +44,6 @@ private:
     int ringStep = 0;
     bool blink = false;
     bool selected = false;
-    bool hasControls = false;
     float ringCy = 54.0f, ringR = 30.0f, ringT = 5.0f;   // set in resized()
 
     juce::Path glyph;           // large type glyph (built in resized)

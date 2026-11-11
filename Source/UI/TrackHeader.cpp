@@ -5,8 +5,9 @@
 namespace el {
 
 TrackHeader::TrackHeader (EngineController& c, Selection& s, PresetManager& p, Id id, int width)
-    : controller (c), selection (s), presets (p), trackId (id)
+    : controller (c), selection (s), presets (p), trackId (id), controls (c, s, p, id)
 {
+    controls.addTo (*this);
     setTooltip ("Click: select. Double-click: rename. Right-click: track menu. Drag sideways: reorder.");
     setSize (width, rowHeight);
     refresh();
@@ -37,13 +38,19 @@ void TrackHeader::refresh()
         case TrackKind::Bus:        line1 = t->folderOf != kInvalidId ? "Sum folder" : "Bus"; break;
         case TrackKind::Master:     line1 = "Master"; break;
     }
+    controls.refresh();
     resized();
     repaint();
 }
 
+void TrackHeader::poll() { controls.poll(); }
+
 void TrackHeader::resized()
 {
-    folderR = numOuts > 0 ? juce::Rectangle<int> (5, getHeight() - 25, getWidth() - 10, 20) : juce::Rectangle<int>();
+    const int w = getWidth(), m = 5;
+    // icon + name | input | M S R | monitor | Pre FX Post FX | outs
+    controls.layout ({ m, 10, 24, 24 }, { m, 56, w - 2 * m, 22 }, { m, 81, w - 2 * m, 20 }, { m, 104, w - 2 * m, 19 });
+    folderR = numOuts > 0 ? juce::Rectangle<int> (m, 127, w - 2 * m, 20) : juce::Rectangle<int>();
 }
 
 void TrackHeader::paint (juce::Graphics& g)
@@ -64,11 +71,10 @@ void TrackHeader::paint (juce::Graphics& g)
     const int w = getWidth();
     g.setColour (theme::text);
     g.setFont (theme::font (13.0f, true));
-    g.drawFittedText (nameText, 6, 8, w - 12, 30, juce::Justification::centredLeft, 2, 0.85f);
+    g.drawFittedText (nameText, 33, 8, w - 37, 28, juce::Justification::centredLeft, 2, 0.8f);
     g.setColour (theme::textDim);
     g.setFont (theme::font (11.0f));
-    const int lineY = folderR.isEmpty() ? 44 : 40;
-    g.drawFittedText (line1, 6, lineY, w - 10, folderR.isEmpty() ? 44 : 30, juce::Justification::topLeft, folderR.isEmpty() ? 3 : 2, 0.9f);
+    g.drawFittedText (line1, 6, 38, w - 10, 15, juce::Justification::centredLeft, 1, 0.8f);
 
     if (! folderR.isEmpty()) {
         auto r = folderR.toFloat();

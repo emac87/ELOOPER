@@ -12,7 +12,6 @@
 #include "UI/Selection.h"
 #include "UI/TrackHeader.h"
 #include "UI/LoopCell.h"
-#include "UI/TrackControls.h"
 #include <functional>
 #include <memory>
 #include <vector>

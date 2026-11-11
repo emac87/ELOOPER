@@ -242,9 +242,8 @@ void ChannelStrip::resized()
         muteR = { kM, kButtonsY, bw, kButtonsH };
         soloR = armR = monR = {};
     } else if (loopPageTrack) {
-        // M / S / arm are in the track's first loop box; only Monitor stays here.
-        muteR = soloR = armR = {};
-        monR = full ? juce::Rectangle<int> (kM, kButtonsY, bw, kButtonsH) : juce::Rectangle<int>();
+        // M / S / arm and monitor are on the track's loop-page label.
+        muteR = soloR = armR = monR = {};
     } else if (full) {
         const int b = 24;
         muteR = { kM, kButtonsY, b, kButtonsH };
@@ -261,7 +260,8 @@ void ChannelStrip::resized()
     int bottom = H - 6;
     outputSlot->setBounds (kM, bottom - kSlotH, bw, kSlotH);
     bottom -= kSlotH + 6;
-    const int faderH = juce::jlimit (80, 220, (int) ((H - kTopH) * 0.36f));
+    const int topH = loopPageTrack ? kHeaderH + 2 : kTopH;
+    const int faderH = juce::jlimit (80, 220, (int) ((H - topH) * 0.36f));
     const int meterW = 14;
     fader->setBounds (kM, bottom - faderH, bw - meterW - 4, faderH);
     meterR = { W - kM - meterW, bottom - faderH, meterW, faderH };
@@ -270,7 +270,7 @@ void ChannelStrip::resized()
     bottom -= 22 + 4;
     if (! isMaster) { gainBar->setBounds (kM, bottom - 22, bw, 22); bottom -= 22 + 4; }
 
-    viewport.setBounds (0, kTopH, W, juce::jmax (0, bottom - kTopH - 2));
+    viewport.setBounds (0, topH, W, juce::jmax (0, bottom - topH - 2));
 }
 
 ChannelStrip::Button ChannelStrip::buttonAt (juce::Point<int> p) const

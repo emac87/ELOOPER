@@ -165,7 +165,8 @@ TransportBar::TransportBar (EngineController& c) : controller (c)
         b.setButtonText (dockNames[i]);
         b.setTooltip (dockTips[i]);
         b.onClick = [this, i] { if (onDock) onDock ((Dock) i, dockButtons[i].getToggleState()); };
-        addAndMakeVisible (b);
+        if (i != (int) Dock::Mixer) addAndMakeVisible (b);   // the mixer folds with the button on its divider bar
+        else addChildComponent (b);
     }
 
     moreButton.setTooltip ("More: Tap tempo, Link, Link start/stop sync, Arrangement record");
@@ -230,7 +231,7 @@ void TransportBar::resized()
         Widths w;
         w.pos = p.tight ? 84 : 100; w.tempo = p.tight ? 72 : 84; w.sig = p.tight ? 58 : 68; w.master = p.tight ? 74 : 82;
         w.page = p.compact ? 56 : 74;
-        w.dockMix = p.compact ? 48 : 58; w.dockAuto = p.compact ? 48 : 98; w.dockEdit = p.compact ? 48 : 58;
+        w.dockMix = 0; /* no Mixer button: the divider bar folds the mixer */ w.dockAuto = p.compact ? 48 : 98; w.dockEdit = p.compact ? 48 : 58;
         return w;
     };
     auto leftWidth = [&] (const Plan& p, const Widths& w) {
@@ -248,7 +249,7 @@ void TransportBar::resized()
         return x + (n - 1) * gap;
     };
     auto rightWidth = [&] (const Plan& p, const Widths& w) {
-        return gearSize + 10 + (p.cpu ? cpuW + 10 : 0) + w.dockMix + w.dockAuto + w.dockEdit + 2 * 2 + 10
+        return gearSize + 10 + (p.cpu ? cpuW + 10 : 0) + w.dockAuto + w.dockEdit + 2 + 10
                + 3 * w.page + 2 * 2 + 14;
     };
 
@@ -269,7 +270,7 @@ void TransportBar::resized()
     settingsButton.setBounds (right - gearSize, (h - gearSize) / 2, gearSize, gearSize); right -= gearSize + 10;
     if (plan.cpu) { cpuR = { right - cpuW, by, cpuW, bh }; right -= cpuW + 10; } else cpuR = {};
     const int dockWs[3] = { wd.dockMix, wd.dockAuto, wd.dockEdit };
-    for (int i = 2; i >= 0; --i) { dockButtons[i].setBounds (right - dockWs[i], by, dockWs[i], bh); right -= dockWs[i] + (i > 0 ? 2 : 0); }
+    for (int i = 2; i >= 1; --i) { dockButtons[i].setBounds (right - dockWs[i], by, dockWs[i], bh); right -= dockWs[i] + (i > 1 ? 2 : 0); }
     right -= 10;
     for (int i = 2; i >= 0; --i) { pageButtons[i].setBounds (right - wd.page, by, wd.page, bh); right -= wd.page + (i > 0 ? 2 : 0); }
 

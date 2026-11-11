@@ -47,33 +47,10 @@ public:
     void visibleAreaChanged (const juce::Rectangle<int>&) override { if (onMoved) onMoved(); }
 };
 
-// ---- an empty first box (a track with no loops yet): holds the track controls; click adds a loop ----
-class EmptyFirstBox : public juce::Component, public juce::SettableTooltipClient {
-public:
-    std::function<void()> onClick;
-    EmptyFirstBox() { setTooltip ("No loops yet: click to add one"); }
-    void paint (juce::Graphics& g) override
-    {
-        auto b = getLocalBounds().toFloat().reduced (2.0f);
-        juce::Path p; p.addRoundedRectangle (b, 9.0f);
-        juce::Path dashed;
-        const float dashes[] = { 5.0f, 4.0f };
-        juce::PathStrokeType (1.2f).createDashedStroke (dashed, p, dashes, 2);
-        g.setColour (theme::outline.brighter (0.2f));
-        g.fillPath (dashed);
-        g.setColour (theme::textDim);
-        g.setFont (theme::font (12.0f));
-        g.drawText ("No loops", b.withTrimmedTop ((float) TrackControls::topBandH).withHeight (44.0f), juce::Justification::centred);
-    }
-    void mouseUp (const juce::MouseEvent& e) override { if (contains (e.getPosition()) && ! e.mods.isPopupMenu() && onClick) onClick(); }
-};
-
-// ---- one track column: its loops (top-down) and "+"; the track controls sit in the first box -------
+// ---- one track column: its loops (top-down) and "+" (only loops here; the controls are on the label) ---
 class LoopGrid::Column : public juce::Component {
 public:
-    Column (LoopGrid& g, const TrackPtr& track)
-        : trackId (track->id), grid (g), isInstrument (track->kind == TrackKind::Instrument),
-          controls (g.controller, g.selection, g.presets, track->id)
+    Column (LoopGrid& g, const TrackPtr& track) : trackId (track->id), grid (g), isInstrument (track->kind == TrackKind::Instrument)
     {
         for (auto& l : track->loops) {
             if (! EngineController::isSceneLoop (*l)) continue;   // automation loops are hidden for now
@@ -90,31 +67,20 @@ public:
             if (id != kInvalidId) grid.selection.select (trackId, id);
         };
         addAndMakeVisible (plus);
-        if (cells.isEmpty()) {
-            empty = std::make_unique<EmptyFirstBox>();
-            empty->onClick = [this] { plus.triggerClick(); };
-            addAndMakeVisible (*empty);
-        } else {
-            cells.getFirst()->setHasControls (true);
-        }
-        controls.addTo (*this);   // on top of the first box
         setSize (colW, heightFor (cells.size()));
     }
 
-    static int heightFor (int n) { return juce::jmax (1, n) * rowStep + plusH; }
+    static int heightFor (int n) { return n * rowStep + plusH; }
     int numCells() const { return cells.size(); }
 
     void resized() override
     {
         int y = 0;
-        if (empty != nullptr) { empty->setBounds (0, 0, colW, cellH); y = rowStep; }
         for (auto* c : cells) { c->setTopLeftPosition (0, y); y += rowStep; }
         plus.setBounds (0, y, colW, plusH);
-        controls.setBox ({ 0, 0, colW, cellH });
     }
-    void refreshAll() { for (auto* c : cells) c->refresh(); controls.refresh(); }
+    void refreshAll() { for (auto* c : cells) c->refresh(); }
     void poll (bool blink) { for (auto* c : cells) c->poll (blink); }
-    void pollControls() { controls.poll(); }
 
     const Id trackId;
 
@@ -122,9 +88,7 @@ private:
     LoopGrid& grid;
     const bool isInstrument;
     juce::OwnedArray<LoopCell> cells;
-    std::unique_ptr<EmptyFirstBox> empty;
     juce::TextButton plus;
-    TrackControls controls;
 };
 
 // ---- the scene buttons down the left side, one per loop row --------------------------------------
@@ -315,7 +279,7 @@ void LoopGrid::timerCallback()
     ++tick;
     const bool blink = ((tick / 8) & 1) == 0;
     for (auto& c : columns) c->poll (blink);
-    if ((tick & 3) == 0) { updateSceneLight(); for (auto& c : columns) c->pollControls(); }   // M / S / R, plug-in lights
+    if ((tick & 3) == 0) { updateSceneLight(); for (auto& l : labels) l->poll(); }   // M / S / R, monitor, plug-in lights
 }
 
 void LoopGrid::rebuild()

@@ -21,7 +21,62 @@ namespace {
     constexpr double defaultUiScale = 1.25;
     constexpr int menuBarHeight = 24;
     constexpr int barThickness = 5;
+    constexpr int mixerBarThickness = 20;   // room for the fold button
     constexpr int autosaveIntervalMs = 2 * 60 * 1000;
+
+    // The bar between the page and the mixer: drag it to resize the mixer, or click the button in
+    // its middle to fold the mixer away / bring it back. While folded it stays as a thin strip
+    // (not draggable) so the button is always there.
+    class MixerBar : public juce::StretchableLayoutResizerBar {
+    public:
+        MixerBar (juce::StretchableLayoutManager* l, int index, bool folded_)
+            : juce::StretchableLayoutResizerBar (l, index, false), folded (folded_)
+        {
+            button.onClick = [this] { if (onToggle) onToggle(); };
+            button.folded = folded;
+            button.setTooltip (folded ? "Show the mixer (M)" : "Hide the mixer (M)");
+            addAndMakeVisible (button);
+            if (folded) setMouseCursor (juce::MouseCursor::NormalCursor);
+        }
+        std::function<void()> onToggle;
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (theme::background);
+            g.setColour (isMouseOver() && ! folded ? theme::accent.withAlpha (0.5f) : theme::outline);
+            g.fillRect (0, getHeight() / 2, getWidth(), 1);
+        }
+        void resized() override { button.setBounds (getLocalBounds().withSizeKeepingCentre (84, getHeight() - 2)); }
+        void mouseDown (const juce::MouseEvent& e) override { if (! folded) juce::StretchableLayoutResizerBar::mouseDown (e); }
+        void mouseDrag (const juce::MouseEvent& e) override { if (! folded) juce::StretchableLayoutResizerBar::mouseDrag (e); }
+        void mouseDoubleClick (const juce::MouseEvent&) override { if (onToggle) onToggle(); }
+
+    private:
+        struct FoldButton : public juce::Button {
+            FoldButton() : juce::Button ("Mixer") {}
+            bool folded = false;
+            void paintButton (juce::Graphics& g, bool over, bool down) override
+            {
+                auto b = getLocalBounds().toFloat().reduced (0.5f);
+                g.setColour (down ? theme::panelRaised.brighter (0.2f) : over ? theme::panelRaised.brighter (0.1f) : theme::panelRaised);
+                g.fillRoundedRectangle (b, b.getHeight() * 0.5f);
+                g.setColour (over ? theme::accent : theme::outline.brighter (0.2f));
+                g.drawRoundedRectangle (b, b.getHeight() * 0.5f, 1.0f);
+                // triangle: up = bring the mixer up (folded), down = fold it away
+                const float cx = b.getX() + 16.0f, cy = b.getCentreY();
+                juce::Path p;
+                if (folded) p.addTriangle (cx - 5.0f, cy + 3.0f, cx + 5.0f, cy + 3.0f, cx, cy - 3.0f);
+                else        p.addTriangle (cx - 5.0f, cy - 3.0f, cx + 5.0f, cy - 3.0f, cx, cy + 3.0f);
+                g.setColour (theme::accent);
+                g.fillPath (p);
+                g.setColour (theme::text);
+                g.setFont (theme::font (12.0f, true));
+                g.drawText ("Mixer", b.withTrimmedLeft (26.0f).withTrimmedRight (8.0f), juce::Justification::centredLeft);
+            }
+        };
+        bool folded;
+        FoldButton button;
+    };
 
     // Show the dirty marker in the title bar.
     juce::String titleFor (const juce::File& f, bool dirty)
@@ -154,6 +209,23 @@ void MainComponent::relayout()   // rebuilds the layout items (page / dock visib
         d->setVisible (dockVisible[i]);
         dockItemIndex[i] = -1;
         if (i == (int) Dock::Automation) continue;   // an overlay, placed by applyLayout()
+        if (i == (int) Dock::Mixer) {
+            // The mixer's bar is always there; its button folds / unfolds the mixer.
+            layout.setItemLayout (n, mixerBarThickness, mixerBarThickness, mixerBarThickness);
+            auto bar = std::make_unique<MixerBar> (&layout, n, ! dockVisible[i]);
+            // Deferred: toggling rebuilds the layout, which deletes this bar.
+            bar->onToggle = [this] { juce::MessageManager::callAsync ([sp = juce::Component::SafePointer<MainComponent> (this)] {
+                if (sp != nullptr) sp->setDock (Dock::Mixer, ! sp->dockVisible[(int) Dock::Mixer]);
+            }); };
+            bars[i] = std::move (bar);
+            addAndMakeVisible (*bars[i]);
+            comps[n++] = bars[i].get();
+            if (! dockVisible[i]) continue;
+            layout.setItemLayout (n, 80, -0.85, (double) dockHeight[i]);
+            dockItemIndex[i] = n;
+            comps[n++] = d;
+            continue;
+        }
         if (! dockVisible[i]) continue;
         layout.setItemLayout (n, barThickness, barThickness, barThickness);
         bars[i] = std::make_unique<juce::StretchableLayoutResizerBar> (&layout, n, false);

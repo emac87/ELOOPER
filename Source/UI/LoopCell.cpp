@@ -1,7 +1,6 @@
 #include "UI/LoopCell.h"
 #include "UI/ColourPicker.h"
 #include "UI/LookAndFeel.h"
-#include "UI/TrackControls.h"
 
 namespace el {
 
@@ -46,28 +45,13 @@ LoopCell::LoopCell (EngineController& c, Selection& s, MidiMapping& mm, Id tid, 
     updateTexts();
 }
 
-void LoopCell::setHasControls (bool c)
-{
-    if (c == hasControls) return;
-    hasControls = c;
-    resized();
-    repaint();
-}
-
 void LoopCell::resized()
 {
     const auto b = getLocalBounds().toFloat();
     const float cx = b.getCentreX();
-    if (hasControls) {
-        // between the controls' bands: top band, ring, length / take line, FX band, name
-        ringT = 4.0f; ringR = 18.0f; ringCy = (float) TrackControls::topBandH + ringR + ringT + 1.0f;
-        buildGlyph (glyph, type, { cx - 10.0f, ringCy - 8.0f, 20.0f, 16.0f });
-        buildGlyph (smallGlyph, type, { 8.0f, ringCy + ringR + 6.0f, 11.0f, 8.0f });
-    } else {
-        ringT = 5.0f; ringR = 30.0f; ringCy = (b.getHeight() - 20.0f) * 0.5f + 4.0f;
-        buildGlyph (glyph, type, { cx - 14.0f, ringCy - 12.0f, 28.0f, 24.0f });
-        buildGlyph (smallGlyph, type, { 6.0f, 6.0f, 13.0f, 10.0f });
-    }
+    ringT = 5.0f; ringR = 30.0f; ringCy = (b.getHeight() - 20.0f) * 0.5f + 4.0f;
+    buildGlyph (glyph, type, { cx - 14.0f, ringCy - 12.0f, 28.0f, 24.0f });
+    buildGlyph (smallGlyph, type, { 6.0f, 6.0f, 13.0f, 10.0f });
 }
 
 void LoopCell::refresh()
@@ -174,7 +158,7 @@ void LoopCell::paint (juce::Graphics& g)
     // centre content
     if (status.state == LoopState::Empty) {
         g.setColour (theme::textDim);
-        g.setFont (theme::font (hasControls ? 12.0f : 15.0f, true));
+        g.setFont (theme::font (15.0f, true));
         g.drawText ("REC", juce::Rectangle<float> (cx - 26.0f, ringCy - 10.0f, 52.0f, 20.0f), juce::Justification::centred);
     } else {
         g.setColour (ink);
@@ -184,10 +168,8 @@ void LoopCell::paint (juce::Graphics& g)
     // corner info
     g.setColour (ink.withAlpha (0.8f));
     g.fillPath (smallGlyph);
-    // first box: the line under the ring; other boxes: the top corners
-    const float infoY = hasControls ? ringCy + ringR + 3.0f : 3.0f;
-    const float infoH = hasControls ? 14.0f : 17.0f;
-    g.setFont (theme::font (hasControls ? 11.5f : 13.0f));
+    const float infoY = 3.0f, infoH = 17.0f;
+    g.setFont (theme::font (13.0f));
     if (lenText.isNotEmpty())
         g.drawText (lenText, juce::Rectangle<float> (22.0f, infoY, 50.0f, infoH), juce::Justification::centredLeft, false);
     if (takeText.isNotEmpty()) {
@@ -195,9 +177,9 @@ void LoopCell::paint (juce::Graphics& g)
         g.drawText (takeText, juce::Rectangle<float> (b.getRight() - 40.0f, infoY, 38.0f, infoH), juce::Justification::centredRight, false);
     }
     g.setColour (ink);
-    g.setFont (theme::font (hasControls ? 13.0f : 14.0f, true));
-    g.drawText (nameText, juce::Rectangle<float> (b.getX() + 3.0f, b.getBottom() - (hasControls ? 15.0f : 19.0f), b.getWidth() - 6.0f,
-                                                  hasControls ? 14.0f : 17.0f),
+    g.setFont (theme::font (14.0f, true));
+    g.drawText (nameText, juce::Rectangle<float> (b.getX() + 3.0f, b.getBottom() - 19.0f, b.getWidth() - 6.0f,
+                                                  17.0f),
                 juce::Justification::centred, true);
 
     if (status.pending != PendingAction::None && blink) {

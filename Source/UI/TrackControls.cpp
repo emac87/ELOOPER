@@ -170,6 +170,50 @@ private:
     juce::Colour colour;
 };
 
+// ---- monitor: Auto / On / Off -------------------------------------------------------------------------
+class TrackControls::MonitorButton : public juce::Component, public juce::SettableTooltipClient {
+public:
+    MonitorButton (EngineController& c, Selection& s, Id id) : controller (c), selection (s), trackId (id)
+    {
+        setTooltip ("Monitoring: Auto (hear the input until a loop is recorded), On or Off. Click to cycle.");
+    }
+    void poll()
+    {
+        auto t = controller.session().findTrack (trackId);
+        if (t == nullptr || ! t->rt) return;
+        const auto m = t->rt->monitor.load();
+        if (m != mode || ! known) { mode = m; known = true; repaint(); }
+    }
+    void paint (juce::Graphics& g) override
+    {
+        const bool on = mode == MonitorMode::On;
+        auto r = getLocalBounds().toFloat();
+        g.setColour (on ? theme::accent : theme::panelRaised);
+        g.fillRoundedRectangle (r, 4.0f);
+        g.setColour (on ? theme::accent.brighter (0.3f) : theme::outline);
+        g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
+        g.setColour (on ? juce::Colours::black : theme::textDim.brighter (0.3f));
+        g.setFont (theme::font (12.0f, true));
+        g.drawText (mode == MonitorMode::Auto ? "Auto" : on ? "Mon On" : "Mon Off", getLocalBounds(), juce::Justification::centred);
+    }
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        selection.select (trackId);
+        if (e.mods.isPopupMenu()) return;
+        auto t = controller.session().findTrack (trackId);
+        if (t == nullptr || ! t->rt) return;
+        const auto m = t->rt->monitor.load();
+        controller.setMonitorMode (trackId, m == MonitorMode::Auto ? MonitorMode::On : m == MonitorMode::On ? MonitorMode::Off : MonitorMode::Auto);
+        poll();
+    }
+private:
+    EngineController& controller;
+    Selection& selection;
+    const Id trackId;
+    MonitorMode mode = MonitorMode::Auto;
+    bool known = false;
+};
+
 // ---- the set -----------------------------------------------------------------------------------------
 TrackControls::TrackControls (EngineController& c, Selection& s, PresetManager& p, Id trackId)
 {
@@ -184,6 +228,9 @@ TrackControls::TrackControls (EngineController& c, Selection& s, PresetManager& 
     buttons = std::make_unique<Buttons> (c, s, trackId);
     pre = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::Pre);
     post = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::Post);
+    monitor = std::make_unique<MonitorButton> (c, s, trackId);
+    if (auto t = c.session().findTrack (trackId))
+        hasMonitor = t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument;
     icon->refresh();
 }
 
@@ -195,16 +242,17 @@ void TrackControls::addTo (juce::Component& parent)
     parent.addAndMakeVisible (*buttons);
     parent.addAndMakeVisible (*pre);
     parent.addAndMakeVisible (*post);
+    if (hasMonitor) parent.addAndMakeVisible (*monitor);
 }
 
-void TrackControls::setBox (juce::Rectangle<int> b)
+void TrackControls::layout (juce::Rectangle<int> iconR, juce::Rectangle<int> msr, juce::Rectangle<int> monR, juce::Rectangle<int> fx)
 {
-    const int m = 6;
-    icon->setBounds (b.getX() + m, b.getY() + m, 22, 22);
-    buttons->setBounds (b.getX() + m + 25, b.getY() + m, b.getWidth() - 2 * m - 25, 22);
-    const int w = (b.getWidth() - 2 * m - 3) / 2;
-    pre->setBounds (b.getX() + m, b.getY() + fxBandY, w, fxBandH);
-    post->setBounds (b.getX() + m + w + 3, b.getY() + fxBandY, b.getWidth() - 2 * m - w - 3, fxBandH);
+    icon->setBounds (iconR);
+    buttons->setBounds (msr);
+    monitor->setBounds (monR);
+    const int w = (fx.getWidth() - 3) / 2;
+    pre->setBounds (fx.withWidth (w));
+    post->setBounds (fx.withTrimmedLeft (w + 3));
 }
 
 void TrackControls::refresh()
@@ -220,6 +268,7 @@ void TrackControls::poll()
     buttons->poll();
     pre->poll();
     post->poll();
+    if (hasMonitor) monitor->poll();
 }
 
 } // namespace el
