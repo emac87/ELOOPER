@@ -12,11 +12,26 @@
 #include "UI/Selection.h"
 #include "UI/TrackHeader.h"
 #include "UI/LoopCell.h"
+#include "UI/TrackControls.h"
 #include <functional>
 #include <memory>
 #include <vector>
 
 namespace el {
+
+// The loop page's column layout, shared with the mixer so each strip sits right under its column.
+namespace looplayout {
+    constexpr int width = theme::columnWidth;
+    constexpr int gap = 10;          // between tracks
+    constexpr int groupGap = 4;      // between a multi-out instrument and its outputs / sum folder
+    constexpr int pad = 10;
+    constexpr int sceneW = 112;      // scene buttons on the left
+    constexpr int leftGutter = pad + sceneW;   // where the first column starts
+
+    struct Entry { Id trackId; bool child; };
+    // The tracks shown as loop-page columns, in order (child = an output / sum folder of the instrument before it).
+    std::vector<Entry> loopPageOrder (const EngineController&);
+}
 
 class LoopGrid : public juce::Component,
                  private juce::Timer,
@@ -33,6 +48,10 @@ public:
     void resized() override;
 
     void showAddTrackMenu();
+
+    // Horizontal scrolling, so the mixer can follow the columns (and the other way round).
+    std::function<void (int x)> onScrolledX;
+    void setScrollX (int x);
 
 private:
     class Column;
@@ -70,6 +89,7 @@ private:
     ClickButton stopAllButton { "Stop all" };
 
     bool needsRebuild = true, syncing = false;
+    int lastScrollX = 0;
     int tick = 0;
 };
 

@@ -1,5 +1,6 @@
 #include "UI/MixerPanel.h"
 #include "UI/Theme.h"
+#include "UI/LoopGrid.h"
 
 namespace el {
 
@@ -8,6 +9,7 @@ MixerPanel::MixerPanel (EngineController& c, Selection& s, PresetManager& p) : c
     viewport.setViewedComponent (&stripHolder, false);
     viewport.setScrollBarsShown (false, true);
     viewport.setScrollBarThickness (8);
+    viewport.onMoved = [this] { if (! settingScroll && onScrolledX) onScrolledX (viewport.getViewPositionX()); };
     addAndMakeVisible (viewport);
     controller.addListener (this);
     selection.addChangeListener (this);
@@ -39,22 +41,19 @@ std::unique_ptr<ChannelStrip> MixerPanel::makeStrip (Id trackId)
 
 void MixerPanel::rebuild()
 {
-    // Same order as the loop page: each track, a multi-out instrument's outputs and its sum
-    // folder right after it, then the plain buses.
+    // Same columns as the loop page (each strip under its track's loops), then the plain buses.
     std::vector<Id> order;
-    const auto& tracks = controller.session().tracks;
+    std::vector<bool> child, onLoopPage;
+    for (auto& e : looplayout::loopPageOrder (controller)) { order.push_back (e.trackId); child.push_back (e.child); onLoopPage.push_back (true); }
     auto has = [&order] (Id id) { return std::find (order.begin(), order.end(), id) != order.end(); };
-    for (auto& t : tracks) {
-        if (t->bounced || ! (t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument || t->kind == TrackKind::AuxOut)) continue;
-        if (t->kind == TrackKind::AuxOut && controller.session().findTrack (t->auxParent) != nullptr) continue;
-        order.push_back (t->id);
-        if (t->kind != TrackKind::Instrument) continue;
-        for (auto& o : tracks) if (! o->bounced && o->kind == TrackKind::AuxOut && o->auxParent == t->id) order.push_back (o->id);
-        if (auto f = controller.folderBusOf (t->id); f && ! f->bounced) order.push_back (f->id);
-    }
-    for (auto& t : tracks)
-        if (! t->bounced && t->kind == TrackKind::Bus && ! has (t->id))
-            order.push_back (t->id);
+    for (auto& t : controller.session().tracks)
+        if (! t->bounced && t->kind == TrackKind::Bus && ! has (t->id)) {
+            // A folded instrument's sum folder stays hidden like on the loop page.
+            if (t->folderOf != kInvalidId)
+                if (auto inst = controller.session().findTrack (t->folderOf); inst && ! inst->folderOpen) continue;
+            order.push_back (t->id); child.push_back (false); onLoopPage.push_back (false);
+        }
+    childFlags = child;
 
     std::vector<std::unique_ptr<ChannelStrip>> next;
     for (Id id : order)
@@ -62,6 +61,7 @@ void MixerPanel::rebuild()
         auto it = std::find_if (strips.begin(), strips.end(), [id] (auto& s) { return s && s->getTrackId() == id; });
         if (it != strips.end()) { (*it)->rebuild(); next.push_back (std::move (*it)); }
         else next.push_back (makeStrip (id));
+        next.back()->setLoopPageTrack (onLoopPage[next.size() - 1]);
     }
     stripHolder.removeAllChildren();
     strips = std::move (next);   // destroys strips of removed tracks
@@ -91,7 +91,9 @@ void MixerPanel::resized()
 {
     auto b = getLocalBounds();
     b.removeFromTop (1);
-    if (masterStrip) masterStrip->setBounds (b.removeFromRight (theme::stripWidth).reduced (0, 2));
+    // Master sits under the scene buttons; the strips start where the loop columns start.
+    auto left = b.removeFromLeft (looplayout::leftGutter);
+    if (masterStrip) masterStrip->setBounds (left.withWidth (theme::stripWidth).reduced (0, 2));
     viewport.setBounds (b);
     layoutStrips();
 }
@@ -99,10 +101,21 @@ void MixerPanel::resized()
 void MixerPanel::layoutStrips()
 {
     const int h = std::max (50, viewport.getHeight() - viewport.getScrollBarThickness());
-    const int w = std::max ((int) strips.size() * theme::stripWidth, viewport.getWidth());
-    stripHolder.setSize (w, h);
     int x = 0;
-    for (auto& s : strips) { s->setBounds (x, 2, theme::stripWidth - 2, h - 2); x += theme::stripWidth; }
+    for (size_t i = 0; i < strips.size(); ++i) {
+        if (i > 0) x += (i < childFlags.size() && childFlags[i]) ? looplayout::groupGap : looplayout::gap;
+        strips[i]->setBounds (x, 2, theme::stripWidth, h - 2);
+        x += theme::stripWidth;
+    }
+    // Room past the last strip so the mixer can scroll as far as the loop page does.
+    stripHolder.setSize (std::max (x + 200, viewport.getWidth()), h);
+}
+
+void MixerPanel::setScrollX (int x)
+{
+    if (x == viewport.getViewPositionX()) return;
+    const juce::ScopedValueSetter<bool> s (settingScroll, true);
+    viewport.setViewPosition (x, viewport.getViewPositionY());
 }
 
 void MixerPanel::timerCallback()

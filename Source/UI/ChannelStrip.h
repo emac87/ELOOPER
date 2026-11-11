@@ -1,8 +1,9 @@
 #pragma once
-// One mixer channel strip (track, bus or master), styled like the loop page used to be: colour
-// stripe, icon + name, M / S / arm / monitor, Logic-style slots (instrument, MIDI FX, audio FX,
-// EQ, sends, post FX; click an empty slot to add), In and Pan bars, a fader with a meter, and
-// the output slot. Owned by MixerPanel.
+// One mixer channel strip (track, bus or master): colour stripe, icon + name, M / S / arm /
+// monitor, Logic-style slots (instrument, MIDI FX, audio FX, EQ, sends, post FX; click an empty
+// slot to add), In and Pan bars, a fader with a meter, and the output slot. Owned by MixerPanel.
+// A track that has a loop-page column keeps M / S / arm, Pre FX and Post FX in its first loop box
+// instead (setLoopPageTrack), so its strip shows only the rest.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
 #include "Engine/PresetManager.h"
@@ -26,6 +27,7 @@ public:
     void rebuild();            // model changed: refresh names / plug-ins / sends / routing (cheap if unchanged)
     void refreshValues();      // UI timer: values, meters, LEDs (repaints only on change)
     void setSelected (bool);
+    void setLoopPageTrack (bool);   // M / S / arm and the Pre / Post FX chains are on the loop page
 
     std::function<void (Id trackId)> onSelect;
 
@@ -55,7 +57,7 @@ private:
     EngineController& controller;
     PresetManager& presets;
     const Id trackId;
-    bool selected = false, isMaster = false, muteGestureOpen = false;
+    bool selected = false, isMaster = false, muteGestureOpen = false, loopPageTrack = false;
     TrackKind kind = TrackKind::Audio;
     juce::Colour colour { 0xff4fc3f7 };
     juce::String nameText, line1, lastSignature;

@@ -13,6 +13,130 @@ namespace {
     }
 }
 
+namespace {
+    const std::vector<PluginSlotPtr>* chainList (const TrackModel& t, FxChain ch)
+    {
+        return ch == FxChain::MidiFx ? &t.midiFx : ch == FxChain::Pre ? &t.preFx : ch == FxChain::Post ? &t.postFx : nullptr;
+    }
+
+    PluginSlotPtr slotAt (const TrackModel& t, FxChain ch, int index)
+    {
+        if (ch == FxChain::Instrument) return t.instrument;
+        auto* l = chainList (t, ch);
+        return l != nullptr && index >= 0 && index < (int) l->size() ? (*l)[(size_t) index] : nullptr;
+    }
+
+    // Item ids are idBase + action (1..8).
+    void addSlotItems (juce::PopupMenu& m, EngineController& c, const TrackModel& t, FxChain chain, int index,
+                       const PluginSlot& slot, int idBase)
+    {
+        const auto* list = chainList (t, chain);
+        const int count = list != nullptr ? (int) list->size() : 1;
+        const bool movable = chain == FxChain::Pre || chain == FxChain::Post;
+        m.addItem (idBase + 1, c.isPluginEditorOpen (slot.id) ? "Hide window" : "Show window");
+        if (chain != FxChain::Instrument) m.addItem (idBase + 8, "Bypass", true, slot.bypassed.load());
+        m.addItem (idBase + 2, "Replace...");
+        m.addItem (idBase + 3, "Presets...");
+        if (chain != FxChain::Instrument) {
+            m.addSeparator();
+            m.addItem (idBase + 4, "Move up", index > 0);
+            m.addItem (idBase + 5, "Move down", index < count - 1);
+            if (movable) m.addItem (idBase + 6, chain == FxChain::Pre ? "Move after the fader (Post FX)" : "Move before the fader (Pre FX)");
+        }
+        m.addSeparator();
+        m.addItem (idBase + 7, chain == FxChain::Instrument ? "No Instrument (remove)" : "No Plug-in (remove)");
+    }
+
+    void runSlotAction (EngineController* c, PresetManager* pm, juce::Component::SafePointer<juce::Component> tgt,
+                        Id tid, Id slotId, FxChain chain, int index, bool wasBypassed, int action)
+    {
+        switch (action) {
+            case 1: c->togglePluginEditor (slotId); break;
+            case 2:
+                if (chain == FxChain::Instrument) showPluginMenu (*c, tid, FxChain::Instrument, -1, tgt.getComponent());
+                else showPluginMenu (*c, tid, chain, index, tgt.getComponent(), [c, slotId] (Id) { c->removePlugin (slotId); });
+                break;
+            case 3: if (tgt != nullptr) pm->showPluginPresetMenu (slotId, tgt.getComponent()); break;
+            case 4: c->movePlugin (slotId, chain, index - 1); break;
+            case 5: c->movePlugin (slotId, chain, index + 1); break;
+            case 6: {
+                auto tr = c->session().findTrack (tid);
+                if (tr == nullptr) break;
+                const auto other = chain == FxChain::Pre ? FxChain::Post : FxChain::Pre;
+                c->movePlugin (slotId, other, (int) (other == FxChain::Pre ? tr->preFx.size() : tr->postFx.size()));
+                break;
+            }
+            case 7: c->removePlugin (slotId); break;
+            case 8: c->setPluginBypass (slotId, ! wasBypassed); break;
+            default: break;
+        }
+    }
+}
+
+void showPluginSlotMenu (EngineController& controller, PresetManager& presets, Id trackId, FxChain chain, int index,
+                         juce::Component* target)
+{
+    auto t = controller.session().findTrack (trackId);
+    if (t == nullptr) return;
+    auto slot = slotAt (*t, chain, index);
+    if (slot == nullptr) return;
+    juce::PopupMenu m;
+    m.addSectionHeader (slot->name());
+    addSlotItems (m, controller, *t, chain, index, *slot, 0);
+    juce::Component::SafePointer<juce::Component> tgt (target);
+    auto* c = &controller; auto* pm = &presets;
+    const Id slotId = slot->id;
+    const bool wasBypassed = slot->bypassed.load();
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target), [c, pm, tgt, trackId, slotId, chain, index, wasBypassed] (int r) {
+        runSlotAction (c, pm, tgt, trackId, slotId, chain, index, wasBypassed, r);
+    });
+}
+
+void showChainMenu (EngineController& controller, PresetManager& presets, Id trackId, FxChain chain, juce::Component* target)
+{
+    auto t = controller.session().findTrack (trackId);
+    if (t == nullptr) return;
+    const auto* list = chainList (*t, chain);
+    if (list == nullptr) return;
+    if (list->empty()) { showPluginMenu (controller, trackId, chain, -1, target); return; }
+
+    // ids: 1..n toggle plug-in i's window; i * 100 + action for its options; 9000 add; 9001 / 9002 show / hide all.
+    struct Entry { Id slotId; bool bypassed; int index; };
+    std::vector<Entry> entries;
+    juce::PopupMenu m;
+    m.addSectionHeader (chain == FxChain::Pre ? "Pre FX (before the fader)" : "Post FX (after the fader)");
+    for (int i = 0; i < (int) list->size(); ++i) {
+        const auto& p = (*list)[(size_t) i];
+        if (p == nullptr) continue;
+        entries.push_back ({ p->id, p->bypassed.load(), i });
+        const int n = (int) entries.size();
+        m.addItem (n, p->name() + (p->bypassed.load() ? "  (bypassed)" : ""), true, controller.isPluginEditorOpen (p->id));
+        juce::PopupMenu opts;
+        addSlotItems (opts, controller, *t, chain, i, *p, n * 100);
+        m.addSubMenu ("    options", opts);
+    }
+    m.addSeparator();
+    m.addItem (9000, "Add plug-in...");
+    m.addItem (9001, "Show all");
+    m.addItem (9002, "Hide all");
+
+    juce::Component::SafePointer<juce::Component> tgt (target);
+    auto* c = &controller; auto* pm = &presets;
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target), [c, pm, tgt, trackId, chain, entries] (int r) {
+        if (r <= 0) return;
+        if (r == 9000) { showPluginMenu (*c, trackId, chain, -1, tgt.getComponent()); return; }
+        if (r == 9001 || r == 9002) {
+            for (auto& e : entries)
+                if (c->isPluginEditorOpen (e.slotId) != (r == 9001)) c->togglePluginEditor (e.slotId);
+            return;
+        }
+        if (r <= (int) entries.size()) { c->togglePluginEditor (entries[(size_t) r - 1].slotId); return; }
+        const int n = r / 100, action = r % 100;
+        if (n >= 1 && n <= (int) entries.size())
+            { const auto& e = entries[(size_t) n - 1]; runSlotAction (c, pm, tgt, trackId, e.slotId, chain, e.index, e.bypassed, action); }
+    });
+}
+
 void renameTrack (EngineController& controller, Id trackId)
 {
     auto t = controller.session().findTrack (trackId);

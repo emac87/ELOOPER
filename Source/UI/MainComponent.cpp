@@ -50,6 +50,9 @@ MainComponent::MainComponent (EngineController& c, MidiMapping& mm, PresetManage
 
     timeline = std::make_unique<TimelineView> (controller, selection);
     mixer = std::make_unique<MixerPanel> (controller, selection, presets);
+    // The mixer strips sit under the loop columns: scroll them together.
+    loopGrid.onScrolledX = [this] (int x) { if (mixer) mixer->setScrollX (x); };
+    mixer->onScrolledX = [this] (int x) { if (page == Page::Loops) loopGrid.setScrollX (x); };
     automation = std::make_unique<AutomationPanel> (controller, selection);
     automation->onClose = [this] { setDock (Dock::Automation, false); };
     editor = std::make_unique<MidiEditor> (controller, selection);

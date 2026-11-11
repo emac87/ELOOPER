@@ -1,12 +1,11 @@
 #include "UI/LoopCell.h"
 #include "UI/ColourPicker.h"
 #include "UI/LookAndFeel.h"
+#include "UI/TrackControls.h"
 
 namespace el {
 
 namespace {
-    constexpr float ringRadius = 27.0f, ringThickness = 5.0f, ringCentreY = 48.0f;
-
     void buildGlyph (juce::Path& p, LoopType t, juce::Rectangle<float> r)
     {
         p.clear();
@@ -40,19 +39,35 @@ namespace {
 LoopCell::LoopCell (EngineController& c, Selection& s, MidiMapping& mm, Id tid, Id lid)
     : controller (c), selection (s), midiMap (mm), trackId (tid), loopId (lid)
 {
-    setSize (theme::loopCellSize, theme::loopCellSize);
+    setSize (theme::loopCellWidth, theme::loopCellHeight);
     setRepaintsOnMouseActivity (false);
     refresh();
     status = controller.loopStatus (loopId);
     updateTexts();
 }
 
+void LoopCell::setHasControls (bool c)
+{
+    if (c == hasControls) return;
+    hasControls = c;
+    resized();
+    repaint();
+}
+
 void LoopCell::resized()
 {
     const auto b = getLocalBounds().toFloat();
     const float cx = b.getCentreX();
-    buildGlyph (glyph, type, { cx - 13.0f, ringCentreY - 11.0f, 26.0f, 22.0f });
-    buildGlyph (smallGlyph, type, { 6.0f, 6.0f, 13.0f, 10.0f });
+    if (hasControls) {
+        // between the controls' bands: top band, ring, length / take line, FX band, name
+        ringT = 4.0f; ringR = 18.0f; ringCy = (float) TrackControls::topBandH + ringR + ringT + 1.0f;
+        buildGlyph (glyph, type, { cx - 10.0f, ringCy - 8.0f, 20.0f, 16.0f });
+        buildGlyph (smallGlyph, type, { 8.0f, ringCy + ringR + 6.0f, 11.0f, 8.0f });
+    } else {
+        ringT = 5.0f; ringR = 30.0f; ringCy = (b.getHeight() - 20.0f) * 0.5f + 4.0f;
+        buildGlyph (glyph, type, { cx - 14.0f, ringCy - 12.0f, 28.0f, 24.0f });
+        buildGlyph (smallGlyph, type, { 6.0f, 6.0f, 13.0f, 10.0f });
+    }
 }
 
 void LoopCell::refresh()
@@ -116,8 +131,8 @@ void LoopCell::poll (bool blinkOn)
         status = s;
         ringStep = step;
         blink = blinkOn;
-        const float r = ringRadius + ringThickness;
-        repaint (juce::Rectangle<float> (getWidth() * 0.5f - r - 2.0f, ringCentreY - r, (r + 2.0f) * 2.0f, r * 2.0f).getSmallestIntegerContainer());
+        const float r = ringR + ringT;
+        repaint (juce::Rectangle<float> (getWidth() * 0.5f - r - 2.0f, ringCy - r, (r + 2.0f) * 2.0f, r * 2.0f).getSmallestIntegerContainer());
     } else {
         blink = blinkOn;
     }
@@ -146,21 +161,21 @@ void LoopCell::paint (juce::Graphics& g)
 
     // ring track + progress
     g.setColour (juce::Colours::white.withAlpha (0.12f));
-    g.drawEllipse (cx - ringRadius, ringCentreY - ringRadius, ringRadius * 2, ringRadius * 2, ringThickness);
+    g.drawEllipse (cx - ringR, ringCy - ringR, ringR * 2, ringR * 2, ringT);
     const float frac = (float) ringStep / 160.0f;
     if (frac > 0.002f) {
         arcPath.clear();
         const float a0 = 0.0f, a1 = juce::MathConstants<float>::twoPi * juce::jmin (frac, 0.9999f);
-        arcPath.addCentredArc (cx, ringCentreY, ringRadius, ringRadius, 0.0f, a0, a1, true);
+        arcPath.addCentredArc (cx, ringCy, ringR, ringR, 0.0f, a0, a1, true);
         g.setColour (ring);
-        g.strokePath (arcPath, juce::PathStrokeType (ringThickness, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+        g.strokePath (arcPath, juce::PathStrokeType (ringT, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
     }
 
     // centre content
     if (status.state == LoopState::Empty) {
         g.setColour (theme::textDim);
-        g.setFont (theme::font (15.0f, true));
-        g.drawText ("REC", juce::Rectangle<float> (cx - 26.0f, ringCentreY - 10.0f, 52.0f, 20.0f), juce::Justification::centred);
+        g.setFont (theme::font (hasControls ? 12.0f : 15.0f, true));
+        g.drawText ("REC", juce::Rectangle<float> (cx - 26.0f, ringCy - 10.0f, 52.0f, 20.0f), juce::Justification::centred);
     } else {
         g.setColour (ink);
         g.fillPath (glyph);
@@ -169,16 +184,20 @@ void LoopCell::paint (juce::Graphics& g)
     // corner info
     g.setColour (ink.withAlpha (0.8f));
     g.fillPath (smallGlyph);
-    g.setFont (theme::font (13.0f));
+    // first box: the line under the ring; other boxes: the top corners
+    const float infoY = hasControls ? ringCy + ringR + 3.0f : 3.0f;
+    const float infoH = hasControls ? 14.0f : 17.0f;
+    g.setFont (theme::font (hasControls ? 11.5f : 13.0f));
     if (lenText.isNotEmpty())
-        g.drawText (lenText, juce::Rectangle<float> (22.0f, 3.0f, 40.0f, 17.0f), juce::Justification::centredLeft, false);
+        g.drawText (lenText, juce::Rectangle<float> (22.0f, infoY, 50.0f, infoH), juce::Justification::centredLeft, false);
     if (takeText.isNotEmpty()) {
         g.setColour (theme::armed);
-        g.drawText (takeText, juce::Rectangle<float> (b.getRight() - 36.0f, 3.0f, 34.0f, 17.0f), juce::Justification::centredRight, false);
+        g.drawText (takeText, juce::Rectangle<float> (b.getRight() - 40.0f, infoY, 38.0f, infoH), juce::Justification::centredRight, false);
     }
     g.setColour (ink);
-    g.setFont (theme::font (14.0f, true));
-    g.drawText (nameText, juce::Rectangle<float> (b.getX() + 3.0f, b.getBottom() - 19.0f, b.getWidth() - 6.0f, 17.0f),
+    g.setFont (theme::font (hasControls ? 13.0f : 14.0f, true));
+    g.drawText (nameText, juce::Rectangle<float> (b.getX() + 3.0f, b.getBottom() - (hasControls ? 15.0f : 19.0f), b.getWidth() - 6.0f,
+                                                  hasControls ? 14.0f : 17.0f),
                 juce::Justification::centred, true);
 
     if (status.pending != PendingAction::None && blink) {

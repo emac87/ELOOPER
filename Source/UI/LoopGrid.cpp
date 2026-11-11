@@ -7,16 +7,37 @@
 namespace el {
 
 namespace {
-    constexpr int cell = theme::loopCellSize;              // loop cells are square
-    constexpr int colW = cell;                             // a track column
-    constexpr int colGap = 10;
-    constexpr int groupGap = 4;                            // between a multi-out instrument and its outputs
-    constexpr int rowStep = cell + 6;                      // loop rows (= scene rows)
+    constexpr int cellH = theme::loopCellHeight;
+    constexpr int colW = looplayout::width;                   // a track column (= loop box width = mixer strip width)
+    constexpr int colGap = looplayout::gap;
+    constexpr int groupGap = looplayout::groupGap;
+    constexpr int rowStep = cellH + 6;                     // loop rows (= scene rows)
     constexpr int plusH = 34;
     constexpr int labelH = TrackHeader::rowHeight;
-    constexpr int sceneW = 112;                            // scene column on the left
-    constexpr int pad = 10;
+    constexpr int sceneW = looplayout::sceneW;
+    constexpr int pad = looplayout::pad;
     constexpr int addTrackW = 72;
+}
+
+std::vector<looplayout::Entry> looplayout::loopPageOrder (const EngineController& controller)
+{
+    std::vector<Entry> out;
+    const auto& tracks = controller.session().tracks;
+    for (auto& t : tracks) {
+        if (t->bounced || t->kind == TrackKind::Master || t->kind == TrackKind::Bus) continue;
+        if (t->kind == TrackKind::AuxOut && controller.session().findTrack (t->auxParent) != nullptr) continue;   // shown in its group
+        out.push_back ({ t->id, false });
+        if (t->kind != TrackKind::Instrument || ! t->folderOpen) continue;
+        for (auto& o : tracks)
+            if (! o->bounced && o->kind == TrackKind::AuxOut && o->auxParent == t->id) out.push_back ({ o->id, true });
+        if (auto f = controller.folderBusOf (t->id); f && ! f->bounced) out.push_back ({ f->id, true });
+    }
+    // Plain buses are mixer-only; one that holds loops still shows so they stay reachable.
+    for (auto& t : tracks)
+        if (! t->bounced && t->kind == TrackKind::Bus && t->folderOf == kInvalidId
+            && std::any_of (t->loops.begin(), t->loops.end(), [] (const LoopPtr& l) { return EngineController::isSceneLoop (*l); }))
+            out.push_back ({ t->id, false });
+    return out;
 }
 
 // ---- a viewport that tells the grid when it scrolled (labels / scenes follow the loops) ------------
@@ -26,10 +47,33 @@ public:
     void visibleAreaChanged (const juce::Rectangle<int>&) override { if (onMoved) onMoved(); }
 };
 
-// ---- one track column: its loops (top-down) and "+" ------------------------------------------------
+// ---- an empty first box (a track with no loops yet): holds the track controls; click adds a loop ----
+class EmptyFirstBox : public juce::Component, public juce::SettableTooltipClient {
+public:
+    std::function<void()> onClick;
+    EmptyFirstBox() { setTooltip ("No loops yet: click to add one"); }
+    void paint (juce::Graphics& g) override
+    {
+        auto b = getLocalBounds().toFloat().reduced (2.0f);
+        juce::Path p; p.addRoundedRectangle (b, 9.0f);
+        juce::Path dashed;
+        const float dashes[] = { 5.0f, 4.0f };
+        juce::PathStrokeType (1.2f).createDashedStroke (dashed, p, dashes, 2);
+        g.setColour (theme::outline.brighter (0.2f));
+        g.fillPath (dashed);
+        g.setColour (theme::textDim);
+        g.setFont (theme::font (12.0f));
+        g.drawText ("No loops", b.withTrimmedTop ((float) TrackControls::topBandH).withHeight (44.0f), juce::Justification::centred);
+    }
+    void mouseUp (const juce::MouseEvent& e) override { if (contains (e.getPosition()) && ! e.mods.isPopupMenu() && onClick) onClick(); }
+};
+
+// ---- one track column: its loops (top-down) and "+"; the track controls sit in the first box -------
 class LoopGrid::Column : public juce::Component {
 public:
-    Column (LoopGrid& g, const TrackPtr& track) : trackId (track->id), grid (g), isInstrument (track->kind == TrackKind::Instrument)
+    Column (LoopGrid& g, const TrackPtr& track)
+        : trackId (track->id), grid (g), isInstrument (track->kind == TrackKind::Instrument),
+          controls (g.controller, g.selection, g.presets, track->id)
     {
         for (auto& l : track->loops) {
             if (! EngineController::isSceneLoop (*l)) continue;   // automation loops are hidden for now
@@ -46,20 +90,31 @@ public:
             if (id != kInvalidId) grid.selection.select (trackId, id);
         };
         addAndMakeVisible (plus);
+        if (cells.isEmpty()) {
+            empty = std::make_unique<EmptyFirstBox>();
+            empty->onClick = [this] { plus.triggerClick(); };
+            addAndMakeVisible (*empty);
+        } else {
+            cells.getFirst()->setHasControls (true);
+        }
+        controls.addTo (*this);   // on top of the first box
         setSize (colW, heightFor (cells.size()));
     }
 
-    static int heightFor (int n) { return n * rowStep + plusH; }
+    static int heightFor (int n) { return juce::jmax (1, n) * rowStep + plusH; }
     int numCells() const { return cells.size(); }
 
     void resized() override
     {
         int y = 0;
+        if (empty != nullptr) { empty->setBounds (0, 0, colW, cellH); y = rowStep; }
         for (auto* c : cells) { c->setTopLeftPosition (0, y); y += rowStep; }
         plus.setBounds (0, y, colW, plusH);
+        controls.setBox ({ 0, 0, colW, cellH });
     }
-    void refreshAll() { for (auto* c : cells) c->refresh(); }
+    void refreshAll() { for (auto* c : cells) c->refresh(); controls.refresh(); }
     void poll (bool blink) { for (auto* c : cells) c->poll (blink); }
+    void pollControls() { controls.poll(); }
 
     const Id trackId;
 
@@ -67,7 +122,9 @@ private:
     LoopGrid& grid;
     const bool isInstrument;
     juce::OwnedArray<LoopCell> cells;
+    std::unique_ptr<EmptyFirstBox> empty;
     juce::TextButton plus;
+    TrackControls controls;
 };
 
 // ---- the scene buttons down the left side, one per loop row --------------------------------------
@@ -78,7 +135,7 @@ public:
     int getCount() const noexcept { return count; }
     void setLit (int scene) { if (scene != lit) { lit = scene; repaint(); } }
 
-    juce::Rectangle<int> sceneRect (int i) const { return { 0, i * rowStep, sceneW - 8, cell }; }
+    juce::Rectangle<int> sceneRect (int i) const { return { 0, i * rowStep, sceneW - 8, cellH }; }
     int sceneAt (juce::Point<int> p) const
     {
         for (int i = 0; i < count; ++i) if (sceneRect (i).contains (p)) return i;
@@ -218,6 +275,14 @@ void LoopGrid::syncFrom (juce::Viewport* src)
     } else if (src == sceneView.get()) {
         gridView->setViewPosition (gp.x, sceneView->getViewPositionY());
     }
+    const int x = gridView->getViewPositionX();
+    if (x != lastScrollX) { lastScrollX = x; if (onScrolledX) onScrolledX (x); }
+}
+
+void LoopGrid::setScrollX (int x)
+{
+    if (x == gridView->getViewPositionX()) return;
+    gridView->setViewPosition (x, gridView->getViewPositionY());   // syncFrom() moves the labels
 }
 
 void LoopGrid::sessionChanged (Change what, Id id)
@@ -250,7 +315,7 @@ void LoopGrid::timerCallback()
     ++tick;
     const bool blink = ((tick / 8) & 1) == 0;
     for (auto& c : columns) c->poll (blink);
-    if ((tick & 3) == 0) { updateSceneLight(); for (auto& l : labels) l->poll(); }   // plug-in icon lights
+    if ((tick & 3) == 0) { updateSceneLight(); for (auto& c : columns) c->pollControls(); }   // M / S / R, plug-in lights
 }
 
 void LoopGrid::rebuild()
@@ -262,7 +327,6 @@ void LoopGrid::rebuild()
     columns.clear();
     labels.clear();
 
-    const auto& tracks = controller.session().tracks;
     auto add = [this] (const TrackPtr& t, bool top) {
         auto col = std::make_unique<Column> (*this, t);
         gridContent.addAndMakeVisible (*col);
@@ -274,20 +338,8 @@ void LoopGrid::rebuild()
         labels.push_back (std::move (lab));
     };
 
-    for (auto& t : tracks) {
-        if (t->bounced || t->kind == TrackKind::Master || t->kind == TrackKind::Bus) continue;
-        if (t->kind == TrackKind::AuxOut && controller.session().findTrack (t->auxParent) != nullptr) continue;   // shown in its group
-        add (t, true);
-        if (t->kind != TrackKind::Instrument || ! t->folderOpen) continue;
-        for (auto& o : tracks)
-            if (! o->bounced && o->kind == TrackKind::AuxOut && o->auxParent == t->id) add (o, false);
-        if (auto f = controller.folderBusOf (t->id); f && ! f->bounced) add (f, false);
-    }
-    // Plain buses are mixer-only; one that holds loops still shows so they stay reachable.
-    for (auto& t : tracks)
-        if (! t->bounced && t->kind == TrackKind::Bus && t->folderOf == kInvalidId
-            && std::any_of (t->loops.begin(), t->loops.end(), [] (const LoopPtr& l) { return EngineController::isSceneLoop (*l); }))
-            add (t, true);
+    for (auto& e : looplayout::loopPageOrder (controller))
+        if (auto t = controller.session().findTrack (e.trackId)) add (t, ! e.child);
 
     layoutContent();
     gridView->setViewPosition (viewPos);
@@ -296,14 +348,14 @@ void LoopGrid::rebuild()
 
 void LoopGrid::layoutContent()
 {
-    int x = 0, maxCells = 0, maxH = 0;
+    int x = 0, maxRows = 0, maxH = 0;
     for (size_t i = 0; i < columns.size(); ++i) {
         const bool child = (bool) labels[i]->getProperties()["child"];
         if (i > 0) x += child ? groupGap : colGap;
         columns[i]->setTopLeftPosition (x, 0);
         labels[i]->setBounds (x, 0, colW, labelH);
         x += colW;
-        maxCells = juce::jmax (maxCells, columns[i]->numCells());
+        maxRows = juce::jmax (maxRows, columns[i]->numCells());
         maxH = juce::jmax (maxH, columns[i]->getHeight());
     }
     const int contentW = x + colGap + addTrackW + pad;
@@ -311,7 +363,7 @@ void LoopGrid::layoutContent()
     gridContent.setSize (juce::jmax (contentW, gridView->getMaximumVisibleWidth()),
                          juce::jmax (maxH + pad, gridView->getMaximumVisibleHeight()));
     labelContent.setSize (gridContent.getWidth() + 20, labelH);   // +20: room past the grid's scrollbar
-    scenes->setCount (maxCells);
+    scenes->setCount (maxRows);
     sceneContent.setSize (sceneW, gridContent.getHeight() + 20);
     scenes->setTopLeftPosition (0, 0);
 }

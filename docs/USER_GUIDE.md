@@ -76,7 +76,9 @@ A new session starts with one audio track and one instrument track.
 
 **Adding loops:** each track row ends with a **+** button. It adds an audio loop (MIDI loop on instrument tracks). Automation loops are hidden for now; automation will come back in a different form.
 
-**Track label:** the label under each column shows the track's colour, its type icon (synth, drums, sampler, EQ and so on, or the channel type), its name and its input (or instrument). Click the icon to show or hide the track's plug-in window (right-click it to pick any plug-in on the track; on an empty instrument track it opens the instrument menu). Click the name to rename the track. Click anywhere else on the label to select the track, right-click anywhere else for the track menu, and drag sideways to reorder tracks. A multi-out instrument has a **Show / Hide outs** button; its outputs and Sum folder are the columns right after it.
+**Track controls (first loop box):** each track's first loop box (a dashed "No loops" box until the track has a loop) carries the track's controls. Along the top: the type icon (synth, drums, sampler, EQ and so on, or the channel type; click it to show or hide the track's plug-in window, right-click it to pick any plug-in on the track; on an empty instrument track it opens the instrument menu), then **M** (mute), **S** (solo) and the red **record arm** button. Along the bottom: **Pre FX** and **Post FX** (effects before and after the fader). Click one to show or hide each plug-in in it, open a plug-in's options (bypass, replace, presets, move, remove) or **Add plug-in...**; on an empty chain it opens the plug-in menu straight away. The middle of the box is the loop as usual. Everything else (instrument, MIDI FX, EQ, sends, In, Pan, Vol, monitoring and output) is on the mixer.
+
+**Track label:** the label under each column shows the track's colour, its name and its input (or instrument). Click it to select the track, double-click to rename it (or use **Rename...** in the track menu), right-click for the track menu, and drag sideways to reorder tracks. A multi-out instrument has a **Show / Hide outs** button; its outputs and Sum folder are the columns right after it.
 
 **Track right-click menu** (for Audio, Instrument and Bus tracks where listed):
 
@@ -195,11 +197,11 @@ Automation records and plays back parameter changes, such as a fader or a plug-i
 
 ## Mixer and routing
 
-Open the **Mixer** dock (`M`) and drag the bar above it to make it taller. Hide it again with the same button and the Loops page shows only loops. The strips are in the same order as the loop rows (a multi-out instrument's outputs and Sum folder sit right after it), then the buses, with Master pinned on the right. Each strip, from top to bottom:
+Open the **Mixer** dock (`M`) and drag the bar above it to make it taller. Hide it again with the same button and the Loops page shows only loops. The strips are the same width as the loop columns and sit right under them, in the same order (a multi-out instrument's outputs and Sum folder right after it), and they scroll sideways together with the loops. The plain buses come after them, and Master is pinned on the left, under the scene buttons. A track that has a loop-page column has its **M**, **S**, **arm**, **Pre FX** and **Post FX** in its first loop box instead, so its strip only shows the rest; buses and Master keep them on the strip. Each strip, from top to bottom:
 
 - **Header:** the colour stripe, the plug-in icon (click: show or hide the track's main plug-in; right-click: any plug-in on the track), the name and the input. Click to select, double-click the name to rename, right-click for the track menu.
-- **M** (mute), **S** (solo), the red **arm** button (an armed track forces its input to be heard) and **Monitor** (cycles Auto, On and Off; in Auto the live input is heard until a loop is recorded).
-- Slots, Logic style: **Instrument** (instrument tracks), **MIDI FX**, **Audio FX**, **EQ** (click the thumbnail to edit the 10-band EQ, **On** toggles it), **Sends** and **Post FX**. Every list ends with an empty dashed slot: click it to add.
+- **Monitor** (cycles Auto, On and Off; in Auto the live input is heard until a loop is recorded). Buses and Master also have **M** (mute) and **S** (solo) here; for tracks they are in the first loop box, with the red **arm** button (an armed track forces its input to be heard).
+- Slots, Logic style: **Instrument** (instrument tracks), **MIDI FX**, **EQ** (click the thumbnail to edit the 10-band EQ, **On** toggles it) and **Sends**; buses and Master also show **Audio FX** and **Post FX** here. Every list ends with an empty dashed slot: click it to add.
 - **In** (input gain) and **Pan** bars, the **Vol** fader with a stereo meter beside it, and the **Output** slot.
 
 **Bars and the fader:** drag left/right or up/down to change them (they never jump to where you click). Hold Shift for fine changes and double-click to reset (0 dB, or centre for pan). The mouse wheel scrolls and never changes a level.

@@ -88,7 +88,7 @@ ChannelStrip::~ChannelStrip()
 juce::String ChannelStrip::makeSignature (const TrackModel& t) const
 {
     juce::String s;
-    s << (int) t.kind << '|';
+    s << (int) t.kind << (loopPageTrack ? 'L' : '-') << '|';
     auto slotSig = [&s] (const PluginSlotPtr& p) {
         if (p) s << '[' << (int) p->id << p->name() << (p->instance != nullptr ? 1 : 0) << ']';
         else s << "[-]";
@@ -184,7 +184,7 @@ void ChannelStrip::buildContent (const TrackModel& t)
         y += 3;
         chain ("MIDI FX", FxChain::MidiFx, t.midiFx, "+ MIDI FX");
     }
-    chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");
+    if (! loopPageTrack) chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");
 
     title ("EQ");
     {
@@ -225,7 +225,7 @@ void ChannelStrip::buildContent (const TrackModel& t)
         empty ("+ Send", "Send to a bus (or make a new one)", [this] (juce::Component* c) { showSendPicker (controller, trackId, c); });
         y += 3;
     }
-    chain ("Post FX", FxChain::Post, t.postFx, "+ Post FX");
+    if (! loopPageTrack) chain ("Post FX", FxChain::Post, t.postFx, "+ Post FX");
 
     content.setSize (theme::stripWidth - 6, y + 2);
     viewport.setViewPosition (0, scrollPos);
@@ -241,8 +241,12 @@ void ChannelStrip::resized()
     if (isMaster) {
         muteR = { kM, kButtonsY, bw, kButtonsH };
         soloR = armR = monR = {};
+    } else if (loopPageTrack) {
+        // M / S / arm are in the track's first loop box; only Monitor stays here.
+        muteR = soloR = armR = {};
+        monR = full ? juce::Rectangle<int> (kM, kButtonsY, bw, kButtonsH) : juce::Rectangle<int>();
     } else if (full) {
-        const int b = 28;
+        const int b = 24;
         muteR = { kM, kButtonsY, b, kButtonsH };
         soloR = muteR.translated (b + 3, 0);
         armR = soloR.translated (b + 3, 0);
@@ -276,6 +280,13 @@ ChannelStrip::Button ChannelStrip::buttonAt (juce::Point<int> p) const
     if (armR.contains (p)) return Arm;
     if (monR.contains (p)) return Monitor;
     return None;
+}
+
+void ChannelStrip::setLoopPageTrack (bool b)
+{
+    if (b == loopPageTrack) return;
+    loopPageTrack = b;
+    rebuild();
 }
 
 void ChannelStrip::setSelected (bool s)
@@ -345,8 +356,8 @@ void ChannelStrip::paint (juce::Graphics& g)
         g.setColour (armed ? juce::Colours::white : theme::record.withAlpha (0.7f));
         const auto c = armR.toFloat().getCentre();
         g.fillEllipse (c.x - 5.0f, c.y - 5.0f, 10.0f, 10.0f);
-        drawBtn (monR, monitorName (monitor), monitor == MonitorMode::On, theme::accent);
     }
+    drawBtn (monR, monitorName (monitor), monitor == MonitorMode::On, theme::accent);
 
     // vertical stereo meter beside the fader
     auto mr = meterR.toFloat();
@@ -405,55 +416,7 @@ void ChannelStrip::mouseDoubleClick (const juce::MouseEvent& e)
 
 void ChannelStrip::showSlotMenu (FxChip& f)
 {
-    auto t = track();
-    if (! t || ! f.getSlot()) return;
-    const auto chain = f.getChain();
-    const int index = f.getIndex();
-    const Id slotId = f.getSlot()->id;
-    const int count = chain == FxChain::MidiFx ? (int) t->midiFx.size()
-                    : chain == FxChain::Pre ? (int) t->preFx.size()
-                    : chain == FxChain::Post ? (int) t->postFx.size() : 1;
-    const bool movable = chain == FxChain::Pre || chain == FxChain::Post;
-    juce::PopupMenu m;
-    m.addSectionHeader (f.getSlot()->name());
-    m.addItem (1, controller.isPluginEditorOpen (slotId) ? "Hide window" : "Show window");
-    if (chain != FxChain::Instrument) m.addItem (8, "Bypass", true, f.getSlot()->bypassed.load());
-    m.addItem (2, "Replace...");
-    m.addItem (3, "Presets...");
-    if (chain != FxChain::Instrument) {
-        m.addSeparator();
-        m.addItem (4, "Move up", index > 0);
-        m.addItem (5, "Move down", index < count - 1);
-        if (movable) m.addItem (6, chain == FxChain::Pre ? "Move after the fader" : "Move before the fader");
-    }
-    m.addSeparator();
-    m.addItem (7, chain == FxChain::Instrument ? "No Instrument (remove)" : "No Plug-in (remove)");
-
-    juce::Component::SafePointer<juce::Component> tgt (&f);
-    auto* c = &controller; auto* pm2 = &presets; const Id tid = trackId;
-    const bool wasBypassed = f.getSlot()->bypassed.load();
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&f), [c, pm2, tgt, tid, slotId, chain, index, wasBypassed] (int r) {
-        switch (r) {
-            case 1: c->togglePluginEditor (slotId); break;
-            case 2:
-                if (chain == FxChain::Instrument) showPluginMenu (*c, tid, FxChain::Instrument, -1, tgt.getComponent());
-                else showPluginMenu (*c, tid, chain, index, tgt.getComponent(), [c, slotId] (Id) { c->removePlugin (slotId); });
-                break;
-            case 3: if (tgt != nullptr) pm2->showPluginPresetMenu (slotId, tgt.getComponent()); break;
-            case 4: c->movePlugin (slotId, chain, index - 1); break;
-            case 5: c->movePlugin (slotId, chain, index + 1); break;
-            case 6: {
-                auto tr = c->session().findTrack (tid);
-                if (tr == nullptr) break;
-                const auto other = chain == FxChain::Pre ? FxChain::Post : FxChain::Pre;
-                c->movePlugin (slotId, other, (int) (other == FxChain::Pre ? tr->preFx.size() : tr->postFx.size()));
-                break;
-            }
-            case 7: c->removePlugin (slotId); break;
-            case 8: c->setPluginBypass (slotId, ! wasBypassed); break;
-            default: break;
-        }
-    });
+    if (f.getSlot()) showPluginSlotMenu (controller, presets, trackId, f.getChain(), f.getIndex(), &f);
 }
 
 void ChannelStrip::showSendMenu (int sendIndex, juce::Component* target)

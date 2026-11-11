@@ -18,8 +18,11 @@ namespace el::theme {
     inline const juce::Colour meterMid     { 0xffffd60a };
     inline const juce::Colour meterHigh    { 0xffff3b30 };
     constexpr int   transportHeight = 64;
-    constexpr int   stripWidth      = 156;
-    constexpr int   loopCellSize    = 96;
+    // Loop-page columns and mixer strips share one width so a track's loops sit right above its strip.
+    constexpr int   columnWidth     = 120;
+    constexpr int   stripWidth      = columnWidth;
+    constexpr int   loopCellWidth   = columnWidth;
+    constexpr int   loopCellHeight  = 124;
     constexpr float cornerRadius    = 6.0f;
     constexpr int   uiRefreshHz     = 30;
     inline juce::Font font (float h, bool bold = false) { return juce::Font (juce::FontOptions (h, bold ? juce::Font::bold : juce::Font::plain)); }
