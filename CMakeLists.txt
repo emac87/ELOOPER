@@ -81,7 +81,7 @@ if(CHIMERA_BUILD_PLUGIN)
             BACKGROUND_AUDIO_ENABLED TRUE
             FILE_SHARING_ENABLED TRUE
             DOCUMENT_BROWSER_ENABLED TRUE
-            REQUIRES_FULL_SCREEN FALSE
+            REQUIRES_FULL_SCREEN TRUE    # landscape-only on iPad needs this (App Store rule)
             IPHONE_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
             IPAD_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight)
     else()
