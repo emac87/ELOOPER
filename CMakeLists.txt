@@ -4,13 +4,23 @@ project(ELooper VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
-if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+if(APPLE AND NOT IOS AND NOT CMAKE_OSX_ARCHITECTURES)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "" FORCE)
 endif()
 
 option(ELOOPER_BUILD_APP   "Build the JUCE application" ON)
 option(ELOOPER_BUILD_TESTS "Build unit tests" ON)
 option(CHIMERA_BUILD_PLUGIN "Build Chimera as its own AU / VST3 / Standalone" ON)
+
+# iPad/iPhone (cmake -G Xcode -DCMAKE_SYSTEM_NAME=iOS): only Chimera, as an AUv3 inside a Standalone app,
+# for TestFlight. tools/ship_chimera_ios.sh drives it on the Mac.
+set(CHIMERA_TEAM_ID "" CACHE STRING "Apple Development Team ID (iOS signing)")
+set(CHIMERA_BUILD "1" CACHE STRING "Build number (CFBundleVersion); must increase for each TestFlight upload")
+if(IOS)
+    set(ELOOPER_BUILD_APP OFF CACHE BOOL "" FORCE)
+    set(ELOOPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(CHIMERA_BUILD_PLUGIN ON CACHE BOOL "" FORCE)
+endif()
 
 # ---------------------------------------------------------------------------
 # Real-time core: pure C++17, no JUCE. Unit-testable anywhere.
@@ -59,14 +69,33 @@ include(cmake/Dependencies.cmake)
 # that ELooper hosts as a built-in instrument.
 # ---------------------------------------------------------------------------
 if(CHIMERA_BUILD_PLUGIN)
-    set(CHIMERA_FORMATS VST3 Standalone)
-    if(APPLE)
-        list(APPEND CHIMERA_FORMATS AU)
+    set(CHIMERA_EXTRA "")
+    if(IOS)
+        set(CHIMERA_FORMATS AUv3 Standalone)
+        set(CHIMERA_BUNDLE "com.evanmcintosh.chimera")   # App Store bundle ID (team 4YRKXPJ3P5)
+        set(CHIMERA_EXTRA
+            BUILD_VERSION "${CHIMERA_BUILD}"
+            DEVELOPMENT_TEAM_ID "${CHIMERA_TEAM_ID}"
+            ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/ChimeraIcon.png"
+            TARGETED_DEVICE_FAMILY "1,2"
+            BACKGROUND_AUDIO_ENABLED TRUE
+            FILE_SHARING_ENABLED TRUE
+            DOCUMENT_BROWSER_ENABLED TRUE
+            REQUIRES_FULL_SCREEN FALSE
+            IPHONE_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+            IPAD_SCREEN_ORIENTATIONS UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight)
+    else()
+        set(CHIMERA_FORMATS VST3 Standalone)
+        if(APPLE)
+            list(APPEND CHIMERA_FORMATS AU)
+        endif()
+        set(CHIMERA_BUNDLE "com.elooper.chimera")
     endif()
     juce_add_plugin(Chimera
         PRODUCT_NAME "Chimera"
         COMPANY_NAME "ELooper"
-        BUNDLE_ID "com.elooper.chimera"
+        BUNDLE_ID "${CHIMERA_BUNDLE}"
+        ${CHIMERA_EXTRA}
         PLUGIN_MANUFACTURER_CODE Elpr
         PLUGIN_CODE Chmr
         FORMATS ${CHIMERA_FORMATS}
@@ -97,6 +126,11 @@ if(CHIMERA_BUILD_PLUGIN)
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+    if(IOS)   # only the Standalone app goes into the archive (the AUv3 extension is embedded in it)
+        set_target_properties(Chimera Chimera_AUv3 PROPERTIES XCODE_ATTRIBUTE_SKIP_INSTALL YES)
+        set_target_properties(Chimera_Standalone PROPERTIES XCODE_ATTRIBUTE_SKIP_INSTALL NO
+                              XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)")
+    endif()
 endif()
 
 if(NOT ELOOPER_BUILD_APP)

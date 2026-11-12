@@ -61,6 +61,9 @@ public:
     juce::AudioParameterFloat* resonanceParam (int layer) const noexcept { return resonance[(size_t) layer]; }
     juce::AudioParameterFloat* panParam (int layer) const noexcept { return pan[(size_t) layer]; }
 
+    // Notes from the on-screen keyboard (iPad/iPhone editor) are merged into the MIDI in processBlock.
+    juce::MidiKeyboardState keyboardState;
+
     int activeVoices() const noexcept { return synth.activeVoiceCount(); }
     float outputPeak() const noexcept { return synth.peakLevel(); }
 

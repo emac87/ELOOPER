@@ -111,6 +111,20 @@ jobs:
           path: Chimera-windows.zip
           if-no-files-found: error
 
+  ios:
+    name: iOS (Chimera AUv3 + app, compile check)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build-ios -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 -DCMAKE_XCODE_GENERATE_SCHEME=ON
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild -project build-ios/ELooper.xcodeproj -scheme Chimera_Standalone -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO -quiet build
+
   web:
     name: Web (Chimera in the browser)
     runs-on: ubuntu-latest

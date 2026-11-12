@@ -13,6 +13,9 @@ else()
     FetchContent_MakeAvailable(juce)
 endif()
 
+if(IOS)
+    return()   # the iOS build is Chimera only: no Ableton Link
+endif()
 if(ELOOPER_LINK_DIR)
     set(_link_dir ${ELOOPER_LINK_DIR})
 else()

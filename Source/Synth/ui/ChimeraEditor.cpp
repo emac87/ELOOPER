@@ -385,8 +385,21 @@ ChimeraEditor::ChimeraEditor (ChimeraProcessor& p)
     addAndMakeVisible (*layerTabs);
     for (auto* pn : allPanels) addChildComponent (*pn);
 
+   #if JUCE_IOS
+    keyboard = std::make_unique<juce::MidiKeyboardComponent> (proc.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard);
+    keyboard->setAvailableRange (24, 108);
+    keyboard->setLowestVisibleKey (48);
+    keyboard->setScrollButtonsVisible (true);
+    keyboard->setWantsKeyboardFocus (false);
+    keyboard->setColour (juce::MidiKeyboardComponent::keyDownOverlayColourId, juce::Colour (0xff4fd8ff).withAlpha (0.6f));
+    keyboard->setColour (juce::MidiKeyboardComponent::mouseOverKeyOverlayColourId, juce::Colours::transparentBlack);
+    addAndMakeVisible (*keyboard);
+    setResizable (true, true);
+    setResizeLimits (240, 160, 4000, 4000);   // the layout scales itself to whatever the screen or host gives us
+   #else
     setResizable (true, true);
     setResizeLimits (900, 620, 2000, 1400);
+   #endif
     setSize (1120, 740);
     selectLayer (0);
     selectPage (pageSound);
@@ -403,9 +416,52 @@ ChimeraEditor::~ChimeraEditor()
 
 void ChimeraEditor::paint (juce::Graphics& g) { g.fillAll (theme::background); }
 
+void ChimeraEditor::timerCallback()
+{
+   #if JUCE_IOS
+    // Re-fit when the device rotates or the view first appears (the safe area changes).
+    if (isShowing() && safeArea() != lastSafe) resized();
+   #endif
+    tick();
+}
+
+#if JUCE_IOS
+juce::Rectangle<int> ChimeraEditor::safeArea()
+{
+    auto area = getLocalBounds();
+    if (isShowing())
+        if (auto* d = juce::Desktop::getInstance().getDisplays().getDisplayForRect (getScreenBounds())) {
+            const auto local = getLocalArea (nullptr, d->safeAreaInsets.subtractedFrom (d->totalArea)).getIntersection (getLocalBounds());
+            if (local.getWidth() > 100 && local.getHeight() > 100) area = local;
+        }
+    return area;
+}
+#endif
+
 void ChimeraEditor::resized()
 {
-    auto r = getLocalBounds().reduced (8);
+   #if JUCE_IOS
+    // Keyboard at real size along the bottom; everything else laid out at the design size
+    // (at least 900 x 620) and scaled down to fit what is left.
+    auto area = safeArea();
+    lastSafe = area;
+    auto kb = area.removeFromBottom (juce::jlimit (60, 150, area.getHeight() * 22 / 100));
+    keyboard->setTransform ({});
+    keyboard->setBounds (kb);
+    keyboard->setKeyWidth (juce::jlimit (22.0f, 48.0f, (float) kb.getWidth() / 22.0f));
+    const float s = juce::jmin (1.0f, (float) area.getWidth() / 900.0f, (float) area.getHeight() / 620.0f);
+    layout ({ 0, 0, juce::roundToInt ((float) area.getWidth() / s), juce::roundToInt ((float) area.getHeight() / s) });
+    const auto t = juce::AffineTransform::scale (s).translated ((float) area.getX(), (float) area.getY());
+    for (auto* c : getChildren())
+        if (c != keyboard.get()) c->setTransform (t);
+   #else
+    layout (getLocalBounds());
+   #endif
+}
+
+void ChimeraEditor::layout (juce::Rectangle<int> r)
+{
+    r = r.reduced (8);
     topBar->setBounds (r.removeFromTop (72));
     r.removeFromTop (6);
     auto tabRow = r.removeFromTop (34);

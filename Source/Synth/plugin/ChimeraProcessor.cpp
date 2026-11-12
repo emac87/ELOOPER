@@ -94,6 +94,7 @@ void ChimeraProcessor::prepareToPlay (double sampleRate, int maximumExpectedSamp
 void ChimeraProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
     juce::ScopedNoDenormals noDenormals;
+    keyboardState.processNextMidiBuffer (midi, 0, buffer.getNumSamples(), true);
     int numEvents = 0;
     const int cap = (int) midiScratch.size();
     for (const auto meta : midi) {

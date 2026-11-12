@@ -30,7 +30,8 @@ private:
     enum Page { pageSound = 0, pageMod, pageFx, numPages };
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override { tick(); }
-    void timerCallback() override { tick(); }
+    void timerCallback() override;
+    void layout (juce::Rectangle<int> r);
     void tick();
     void selectLayer (int layer);
     void selectPage (int page);
@@ -57,6 +58,12 @@ private:
     std::unique_ptr<PillButton> pageButtons[numPages];
 
     std::unique_ptr<Panel> voice, engine, filter, env[3], lfo[2], globalLfo[2], matrix, fx[3];
+   #if JUCE_IOS
+    // iPad/iPhone: a playable keyboard along the bottom, and the rest of the editor scaled to fit.
+    std::unique_ptr<juce::MidiKeyboardComponent> keyboard;
+    juce::Rectangle<int> lastSafe;
+    juce::Rectangle<int> safeArea();
+   #endif
     std::vector<Panel*> layerPanels;   // panels tinted with the selected layer's colour
     std::vector<Panel*> allPanels;
 
