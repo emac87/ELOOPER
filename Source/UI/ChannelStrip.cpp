@@ -26,6 +26,22 @@ namespace {
         for (auto& d : cache) if (d.identifier == identifier) return d.name;
         return identifier;
     }
+
+    // The strip's EQ on / off button; right-click opens the EQ editor.
+    struct EqButton : public juce::TextButton {
+        EqButton() : juce::TextButton ("On") {}
+        std::function<void()> onRightClick;
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (e.mods.isPopupMenu()) { if (onRightClick) onRightClick(); return; }
+            juce::TextButton::mouseDown (e);
+        }
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            if (e.mods.isPopupMenu()) return;
+            juce::TextButton::mouseUp (e);
+        }
+    };
 }
 
 void ChannelStrip::Content::paint (juce::Graphics& g)
@@ -150,7 +166,7 @@ void ChannelStrip::buildContent (const TrackModel& t)
     content.removeAllChildren();
     content.titles.clear();
     owned.clear(); chips.clear(); sendBars.clear();
-    eqThumb = nullptr; eqToggle = nullptr;
+    eqToggle = nullptr;
 
     const int rw = theme::stripWidth - 2 * kM - 6;   // leave room for the scrollbar
     int y = 2;
@@ -186,21 +202,18 @@ void ChannelStrip::buildContent (const TrackModel& t)
     }
     if (! loopPageTrack) chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");
 
-    title ("EQ");
     {
-        auto thumb = std::make_unique<GraphicEqEditor> (controller, trackId, true);
-        thumb->onClick = [this] { openEqEditor(); };
-        eqThumb = add (std::move (thumb));
-        eqThumb->setBounds (kM, y, rw - 40, 30);
-        auto tb = std::make_unique<juce::TextButton> ("On");
+        // EQ on / off, full slot width (right-click opens the EQ editor).
+        auto tb = std::make_unique<EqButton>();
         eqToggle = tb.get();
         tb->setClickingTogglesState (true);
-        tb->setTooltip ("EQ on / off");
+        tb->setTooltip ("EQ on / off (right-click: open the EQ)");
         tb->setColour (juce::TextButton::buttonColourId, theme::panelRaised);
         tb->setColour (juce::TextButton::buttonOnColourId, theme::accent.darker (0.4f));
         tb->onClick = [this] { if (auto tr = track(); tr && tr->rt && eqToggle) tr->rt->eqEnabled.store (eqToggle->getToggleState()); };
-        add (std::move (tb))->setBounds (kM + rw - 36, y + 3, 36, 24);
-        y += 36;
+        tb->onRightClick = [this] { openEqEditor(); };
+        add (std::move (tb))->setBounds (kM, y, rw, kSlotH);
+        y += kSlotH + kSlotGap + 3;
     }
 
     if (! isMaster) {
@@ -266,9 +279,14 @@ void ChannelStrip::resized()
     fader->setBounds (kM, bottom - faderH, bw - meterW - 4, faderH);
     meterR = { W - kM - meterW, bottom - faderH, meterW, faderH };
     bottom -= faderH + 5;
-    panBar->setBounds (kM, bottom - 22, bw, 22);
-    bottom -= 22 + 4;
-    if (! isMaster) { gainBar->setBounds (kM, bottom - 22, bw, 22); bottom -= 22 + 4; }
+    // A loop-page track has In and Pan on its loop-page label instead.
+    panBar->setVisible (! loopPageTrack);
+    gainBar->setVisible (! loopPageTrack && ! isMaster);
+    if (! loopPageTrack) {
+        panBar->setBounds (kM, bottom - 22, bw, 22);
+        bottom -= 22 + 4;
+        if (! isMaster) { gainBar->setBounds (kM, bottom - 22, bw, 22); bottom -= 22 + 4; }
+    }
 
     viewport.setBounds (0, topH, W, juce::jmax (0, bottom - topH - 2));
 }
@@ -309,7 +327,6 @@ void ChannelStrip::refreshValues()
     gainBar->poll(); panBar->poll(); fader->poll();
     for (auto* c : chips) c->poll();
     for (auto* b : sendBars) b->poll();
-    if (eqThumb) eqThumb->refresh();
     if (eqToggle) eqToggle->setToggleState (t->rt->eqEnabled.load(), juce::dontSendNotification);
     const auto ms = controller.meter (trackId);
     const int l = juce::jlimit (0, 60, (int) (ms.left * 60.0f)), r = juce::jlimit (0, 60, (int) (ms.right * 60.0f));
@@ -459,10 +476,10 @@ void ChannelStrip::showHardwareOutputMenu (juce::Component* target)
 
 void ChannelStrip::openEqEditor()
 {
-    if (eqThumb == nullptr) return;
+    if (eqToggle == nullptr) return;
     auto ed = std::make_unique<GraphicEqEditor> (controller, trackId, false);
     ed->setSize (520, 300);
-    juce::CallOutBox::launchAsynchronously (std::move (ed), eqThumb->getScreenBounds(), nullptr);
+    juce::CallOutBox::launchAsynchronously (std::move (ed), eqToggle->getScreenBounds(), nullptr);
 }
 
 } // namespace el

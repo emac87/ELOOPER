@@ -1,8 +1,8 @@
 #pragma once
 // One mixer channel strip (track, bus or master): colour stripe, icon + name, M / S / arm /
-// monitor, Logic-style slots (instrument, MIDI FX, audio FX, EQ, sends, post FX; click an empty
-// slot to add), In and Pan bars, a fader with a meter, and the output slot. Owned by MixerPanel.
-// A track that has a loop-page column keeps M / S / arm, monitor, Pre FX and Post FX on its
+// monitor, Logic-style slots (instrument, MIDI FX, audio FX, EQ on / off, sends, post FX; click an
+// empty slot to add), In and Pan bars, a fader with a meter, and the output slot. Owned by MixerPanel.
+// A track that has a loop-page column keeps M / S / arm, monitor, Pre FX / Post FX and In / Pan on its
 // loop-page label instead (setLoopPageTrack), so its strip shows only the rest.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
@@ -73,7 +73,6 @@ private:
     std::vector<std::unique_ptr<juce::Component>> owned;   // children of `content`
     std::vector<FxChip*> chips;
     std::vector<ValueBar*> sendBars;
-    GraphicEqEditor* eqThumb = nullptr;
     juce::TextButton* eqToggle = nullptr;
     std::unique_ptr<ValueBar> gainBar, panBar, fader;
     std::unique_ptr<MenuSlot> outputSlot;

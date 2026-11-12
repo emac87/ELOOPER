@@ -3,6 +3,8 @@
 #include "UI/PluginBrowser.h"
 #include "UI/TrackMenu.h"
 #include "UI/Theme.h"
+#include "UI/ValueBar.h"
+#include "Core/ParamMapping.h"
 
 namespace el {
 
@@ -231,6 +233,18 @@ TrackControls::TrackControls (EngineController& c, Selection& s, PresetManager& 
     monitor = std::make_unique<MonitorButton> (c, s, trackId);
     if (auto t = c.session().findTrack (trackId))
         hasMonitor = t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument;
+
+    gainBar = std::make_unique<ValueBar>();
+    bindValueBar (*gainBar, c, trackId, { ParamKind::InputGain, kInvalidId, -1 });
+    gainBar->label = "In"; gainBar->bipolar = true; gainBar->defaultValue = 0.5f;
+    gainBar->format = [] (float v) { return stripfmt::signedDb (pm::inputGainToDb (v)); };
+    gainBar->setTooltip ("Input gain (drag; double-click resets to 0 dB)");
+
+    panBar = std::make_unique<ValueBar>();
+    bindValueBar (*panBar, c, trackId, { ParamKind::Pan, kInvalidId, -1 });
+    panBar->label = "Pan"; panBar->bipolar = true; panBar->defaultValue = 0.5f;
+    panBar->format = [] (float v) { return stripfmt::panText (v); };
+    panBar->setTooltip ("Pan (drag; double-click centres)");
     icon->refresh();
 }
 
@@ -243,10 +257,15 @@ void TrackControls::addTo (juce::Component& parent)
     parent.addAndMakeVisible (*pre);
     parent.addAndMakeVisible (*post);
     if (hasMonitor) parent.addAndMakeVisible (*monitor);
+    parent.addAndMakeVisible (*gainBar);
+    parent.addAndMakeVisible (*panBar);
 }
 
-void TrackControls::layout (juce::Rectangle<int> iconR, juce::Rectangle<int> msr, juce::Rectangle<int> monR, juce::Rectangle<int> fx)
+void TrackControls::layout (juce::Rectangle<int> iconR, juce::Rectangle<int> msr, juce::Rectangle<int> monR, juce::Rectangle<int> fx,
+                            juce::Rectangle<int> inR, juce::Rectangle<int> panR)
 {
+    gainBar->setBounds (inR);
+    panBar->setBounds (panR);
     icon->setBounds (iconR);
     buttons->setBounds (msr);
     monitor->setBounds (monR);
@@ -269,6 +288,12 @@ void TrackControls::poll()
     pre->poll();
     post->poll();
     if (hasMonitor) monitor->poll();
+}
+
+void TrackControls::pollValues()
+{
+    gainBar->poll();
+    panBar->poll();
 }
 
 } // namespace el

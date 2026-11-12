@@ -279,6 +279,7 @@ void LoopGrid::timerCallback()
     ++tick;
     const bool blink = ((tick / 8) & 1) == 0;
     for (auto& c : columns) c->poll (blink);
+    for (auto& l : labels) l->pollValues();
     if ((tick & 3) == 0) { updateSceneLight(); for (auto& l : labels) l->poll(); }   // M / S / R, monitor, plug-in lights
 }
 
