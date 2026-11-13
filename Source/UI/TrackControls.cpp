@@ -177,7 +177,7 @@ class TrackControls::MonitorButton : public juce::Component, public juce::Settab
 public:
     MonitorButton (EngineController& c, Selection& s, Id id) : controller (c), selection (s), trackId (id)
     {
-        setTooltip ("Monitoring: Auto (hear the input until a loop is recorded), On or Off. Click to cycle.");
+        setTooltip ("Input monitoring (I): Auto (hear the input until a loop is recorded, letter lit), On (filled) or Off (dim). Click to cycle.");
     }
     void poll()
     {
@@ -196,7 +196,11 @@ public:
         g.drawRoundedRectangle (r.reduced (0.5f), 4.0f, 1.0f);
         g.setColour (on ? juce::Colours::black : theme::textDim.brighter (0.3f));
         g.setFont (theme::font (12.0f, true));
-        g.drawText (mode == MonitorMode::Auto ? "Auto" : on ? "Mon On" : "Mon Off", getLocalBounds(), juce::Justification::centred);
+        // "I" = input monitoring. On: filled; Auto: accent letter; Off: dim letter.
+        if (mode == MonitorMode::Auto) g.setColour (theme::accent);
+        else if (! on) g.setColour (theme::textDim.withAlpha (0.6f));
+        g.setFont (theme::font (12.5f, true));
+        g.drawText ("I", getLocalBounds(), juce::Justification::centred);
     }
     void mouseDown (const juce::MouseEvent& e) override
     {
@@ -267,6 +271,13 @@ void TrackControls::layout (juce::Rectangle<int> iconR, juce::Rectangle<int> msr
     gainBar->setBounds (inR);
     panBar->setBounds (panR);
     icon->setBounds (iconR);
+    if (monR.isEmpty() && hasMonitor) {
+        // The monitor button shares the M / S / R row as a fourth, equal-width "I" button.
+        const int gap = 3, n = 4;   // M, S, R (tracks with a monitor always have record arm) + I
+        const int cw = (msr.getWidth() - gap * (n - 1)) / n;
+        monR = msr.removeFromRight (msr.getWidth() - (n - 1) * (cw + gap));
+        msr.removeFromRight (gap);
+    }
     buttons->setBounds (msr);
     monitor->setBounds (monR);
     const int w = (fx.getWidth() - 3) / 2;

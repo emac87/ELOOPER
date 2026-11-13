@@ -194,10 +194,13 @@ void ChannelStrip::buildContent (const TrackModel& t)
     };
 
     if (t.kind == TrackKind::Instrument) {
-        title ("Instrument");
-        if (t.instrument != nullptr) chip (FxChain::Instrument, 0, t.instrument);
-        else empty ("+ Instrument", "Choose an instrument", [this] (juce::Component* c) { showPluginMenu (controller, trackId, FxChain::Instrument, 0, c); });
-        y += 3;
+        // No empty "+ Instrument" slot here: an empty instrument track picks its instrument from the
+        // plug-in icon on its track label. A loaded instrument still shows as a chip.
+        if (t.instrument != nullptr) {
+            title ("Instrument");
+            chip (FxChain::Instrument, 0, t.instrument);
+            y += 3;
+        }
         chain ("MIDI FX", FxChain::MidiFx, t.midiFx, "+ MIDI FX");
     }
     if (! loopPageTrack) chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");

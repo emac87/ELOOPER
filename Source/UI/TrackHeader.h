@@ -17,7 +17,7 @@ namespace el {
 
 class TrackHeader : public juce::Component, public juce::SettableTooltipClient {
 public:
-    static constexpr int rowHeight = 198;     // label height
+    static constexpr int rowHeight = 175;     // label height
     static constexpr int defaultWidth = theme::columnWidth;   // = loop column width
 
     TrackHeader (EngineController&, Selection&, PresetManager&, Id trackId, int width = defaultWidth);

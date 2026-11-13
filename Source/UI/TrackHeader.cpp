@@ -49,10 +49,10 @@ void TrackHeader::pollValues() { controls.pollValues(); }
 void TrackHeader::resized()
 {
     const int w = getWidth(), m = 5;
-    // icon + name | input | M S R | monitor | Pre FX Post FX | In | Pan | outs
-    controls.layout ({ m, 10, 24, 24 }, { m, 56, w - 2 * m, 22 }, { m, 81, w - 2 * m, 20 }, { m, 104, w - 2 * m, 19 },
-                     { m, 127, w - 2 * m, 20 }, { m, 150, w - 2 * m, 20 });
-    folderR = numOuts > 0 ? juce::Rectangle<int> (m, 174, w - 2 * m, 20) : juce::Rectangle<int>();
+    // icon + name | input | M S R I (I = input monitor) | Pre FX Post FX | In | Pan | outs
+    controls.layout ({ m, 10, 24, 24 }, { m, 56, w - 2 * m, 22 }, {}, { m, 81, w - 2 * m, 19 },
+                     { m, 104, w - 2 * m, 20 }, { m, 127, w - 2 * m, 20 });
+    folderR = numOuts > 0 ? juce::Rectangle<int> (m, 151, w - 2 * m, 20) : juce::Rectangle<int>();
 }
 
 void TrackHeader::paint (juce::Graphics& g)
