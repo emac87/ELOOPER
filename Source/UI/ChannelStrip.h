@@ -12,7 +12,6 @@
 
 namespace el {
 
-class GraphicEqEditor;
 class ValueBar;
 class FxChip;
 class MenuSlot;
@@ -47,7 +46,6 @@ private:
     void showSlotMenu (FxChip&);
     void showSendMenu (int sendIndex, juce::Component*);
     void showHardwareOutputMenu (juce::Component*);
-    void openEqEditor();
 
     struct Content : public juce::Component {
         std::vector<std::pair<juce::String, int>> titles;   // section label + y
@@ -73,8 +71,6 @@ private:
     std::vector<std::unique_ptr<juce::Component>> owned;   // children of `content`
     std::vector<FxChip*> chips;
     std::vector<ValueBar*> sendBars;
-    juce::TextButton* eqToggle = nullptr;        // = eqOwned, the power button at the very bottom
-    std::unique_ptr<juce::TextButton> eqOwned;
     std::unique_ptr<ValueBar> gainBar, panBar, fader;
     std::unique_ptr<MenuSlot> outputSlot;
 };

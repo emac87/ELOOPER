@@ -1,5 +1,4 @@
 #include "UI/ChannelStrip.h"
-#include "UI/GraphicEqEditor.h"
 #include "UI/PluginBrowser.h"
 #include "UI/StripWidgets.h"
 #include "UI/Theme.h"
@@ -27,40 +26,6 @@ namespace {
         return identifier;
     }
 
-    // The strip's EQ on / off button; right-click opens the EQ editor.
-    struct EqButton : public juce::TextButton {
-        EqButton() : juce::TextButton ("EQ") {}
-        std::function<void()> onRightClick;
-        // Drawn as a power symbol: lit (accent) when the EQ is on, dim when it is off.
-        void paintButton (juce::Graphics& g, bool over, bool down) override
-        {
-            const bool on = getToggleState();
-            auto r = getLocalBounds().toFloat().reduced (0.5f);
-            g.setColour (on ? theme::accent.darker (0.4f) : theme::panelRaised);
-            if (over || down) g.setColour ((on ? theme::accent.darker (0.4f) : theme::panelRaised).brighter (down ? 0.25f : 0.12f));
-            g.fillRoundedRectangle (r, 4.0f);
-            g.setColour (on ? theme::accent : theme::outline);
-            g.drawRoundedRectangle (r, 4.0f, 1.0f);
-            const float d = juce::jmin (r.getWidth(), r.getHeight()) - 9.0f;
-            const auto c = r.getCentre();
-            juce::Path arc;
-            arc.addCentredArc (c.x, c.y + 0.5f, d * 0.5f, d * 0.5f, 0.0f,
-                               juce::MathConstants<float>::pi * 0.22f, juce::MathConstants<float>::pi * 1.78f, true);
-            g.setColour (on ? juce::Colours::white : theme::textDim);
-            g.strokePath (arc, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-            g.drawLine (c.x, c.y - d * 0.62f, c.x, c.y - d * 0.05f, 1.8f);
-        }
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            if (e.mods.isPopupMenu()) { if (onRightClick) onRightClick(); return; }
-            juce::TextButton::mouseDown (e);
-        }
-        void mouseUp (const juce::MouseEvent& e) override
-        {
-            if (e.mods.isPopupMenu()) return;
-            juce::TextButton::mouseUp (e);
-        }
-    };
 }
 
 void ChannelStrip::Content::paint (juce::Graphics& g)
@@ -110,18 +75,6 @@ ChannelStrip::ChannelStrip (EngineController& c, PresetManager& p, Id id)
         else showOutputPicker (controller, trackId, c2);
     };
     addAndMakeVisible (*outputSlot);
-
-    {
-        // EQ on / off as a power button, the very last thing on the strip (right-click opens the EQ editor).
-        auto tb = std::make_unique<EqButton>();
-        tb->setClickingTogglesState (true);
-        tb->setTooltip ("EQ on / off (right-click: open the EQ)");
-        tb->onClick = [this] { if (auto tr = track(); tr && tr->rt && eqToggle) tr->rt->eqEnabled.store (eqToggle->getToggleState()); };
-        tb->onRightClick = [this] { openEqEditor(); };
-        eqToggle = tb.get();
-        eqOwned = std::move (tb);
-        addAndMakeVisible (*eqOwned);
-    }
 
     rebuild();
 }
@@ -288,10 +241,8 @@ void ChannelStrip::resized()
         armR = monR = {};
     }
 
-    // Bottom (from the very bottom up): EQ power button, output, fader + meter, pan, In. The fader grows with the panel.
+    // Bottom: output, fader + meter, pan, In. The fader grows with the panel.
     int bottom = H - 6;
-    eqOwned->setBounds (kM, bottom - kSlotH, bw, kSlotH);
-    bottom -= kSlotH + 4;
     outputSlot->setBounds (kM, bottom - kSlotH, bw, kSlotH);
     bottom -= kSlotH + 6;
     const int topH = loopPageTrack ? kHeaderH + 2 : kTopH;
@@ -348,7 +299,6 @@ void ChannelStrip::refreshValues()
     gainBar->poll(); panBar->poll(); fader->poll();
     for (auto* c : chips) c->poll();
     for (auto* b : sendBars) b->poll();
-    if (eqToggle) eqToggle->setToggleState (t->rt->eqEnabled.load(), juce::dontSendNotification);
     const auto ms = controller.meter (trackId);
     const int l = juce::jlimit (0, 60, (int) (ms.left * 60.0f)), r = juce::jlimit (0, 60, (int) (ms.right * 60.0f));
     if (l != meterL || r != meterR2) { meterL = l; meterR2 = r; repaint (meterR.expanded (1)); }
@@ -495,12 +445,5 @@ void ChannelStrip::showHardwareOutputMenu (juce::Component* target)
     });
 }
 
-void ChannelStrip::openEqEditor()
-{
-    if (eqToggle == nullptr) return;
-    auto ed = std::make_unique<GraphicEqEditor> (controller, trackId, false);
-    ed->setSize (520, 300);
-    juce::CallOutBox::launchAsynchronously (std::move (ed), eqToggle->getScreenBounds(), nullptr);
-}
 
 } // namespace el

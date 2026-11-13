@@ -200,7 +200,7 @@ Click the **Mixer** button in the middle of the bar along the bottom of the page
 - **Header:** the colour stripe, the plug-in icon (click: show or hide the track's main plug-in; right-click: any plug-in on the track), the name and the input. Click to select, double-click the name to rename, right-click for the track menu.
 - Buses: **M** (mute) and **S** (solo); Master: **M**. Tracks have these, the red **arm** button (an armed track forces its input to be heard) and monitoring on their loop-page label.
 - Slots, Logic style: **Instrument** (instrument tracks, once one is loaded), **MIDI FX** and **Sends**; buses and Master also show **Audio FX** and **Post FX** here. Every list ends with an empty dashed slot: click it to add.
-- The **power button** at the very bottom of every strip turns its EQ on (lit) and off (grey); right-click it to edit the 10-band EQ.
+- **ELooper EQ** (built in, no scan needed) is at the top of every Pre FX / Post FX plug-in menu: a 10-band graphic EQ (+/-12 dB, double-click a band to reset, **Flat** resets all). Add it, bypass it, move it or remove it like any plug-in. Projects that used the old strip EQ get an ELooper EQ at the end of Pre FX with the same settings.
 - **In** (input gain) and **Pan** bars, the **Vol** fader with a stereo meter beside it, and the **Output** slot.
 
 **Bars and the fader:** drag left/right or up/down to change them (they never jump to where you click). Hold Shift for fine changes and double-click to reset (0 dB, or centre for pan). The mouse wheel scrolls and never changes a level.

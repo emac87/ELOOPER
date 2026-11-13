@@ -208,7 +208,11 @@ static void testSaveLoadRoundTrip() {
     CHECK (t2 != nullptr);
     if (t2) {
         CHECK (std::abs (t2->rt->pan.load() - 0.25f) < 1e-4f);
-        CHECK (std::abs (t2->rt->eq[3].load() - 0.8f) < 1e-4f);
+        // The old track EQ moves into an ELooper EQ plug-in at the end of Pre FX (0.8 normalised = +7.2 dB).
+        CHECK (std::abs (t2->rt->eq[3].load() - 0.5f) < 1e-4f);
+        CHECK (t2->preFx.size() == 1 && t2->preFx[0]->instance != nullptr);
+        if (t2->preFx.size() == 1 && t2->preFx[0]->instance != nullptr)
+            CHECK (std::abs (t2->preFx[0]->instance->getParameters()[3]->getValue() - 0.8f) < 1e-3f);
         CHECK (t2->sends.size() == 1 && t2->sends[0].busId == bus && t2->sends[0].preFader);
     }
     auto l2 = c2.session().findLoop (loop);

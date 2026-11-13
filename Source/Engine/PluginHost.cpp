@@ -1,4 +1,5 @@
 #include "Engine/PluginHost.h"
+#include "Engine/BuiltInEq.h"
 
 namespace el {
 
@@ -329,7 +330,9 @@ juce::PluginDescription PluginHost::resolveLegacy (const juce::PluginDescription
 
 std::vector<juce::PluginDescription> PluginHost::effects() const
 {
-    return filtered (knownList, [] (const auto& d) { return ! d.isInstrument && ! isMidiEffect (d); });
+    auto out = filtered (knownList, [] (const auto& d) { return ! d.isInstrument && ! isMidiEffect (d); });
+    out.insert (out.begin(), builtin::eqDescription());   // built-in effects first, no scan needed
+    return out;
 }
 
 std::vector<juce::PluginDescription> PluginHost::midiEffects() const
@@ -345,6 +348,15 @@ void PluginHost::createInstance (const juce::PluginDescription& desc, double sam
             if (callback) callback (nullptr, "Chimera is no longer built into ELooper. Install the Chimera Audio Unit "
                                              "(Chimera-macos.zip), choose Scan for Plug-ins, then open the project again.");
         });
+        return;
+    }
+
+    if (builtin::isBuiltIn (desc)) {
+        auto p = builtin::create (desc);
+        if (p != nullptr) p->setRateAndBufferSizeDetails (sampleRate, blockSize);
+        // Built-ins are created straight away: nothing to load from disk.
+        const juce::String err = p == nullptr ? juce::String ("Unknown built-in plug-in.") : juce::String();
+        if (cb) cb (std::move (p), err);
         return;
     }
 

@@ -1,5 +1,6 @@
 #include "EngineController.h"
 #include "AudioEngine.h"
+#include "BuiltInEq.h"
 #include "Core/Routing.h"
 #include <algorithm>
 #include <map>
@@ -378,6 +379,21 @@ void EngineController::loadSession (std::unique_ptr<Session> s, std::function<vo
         }
     }
     ss.nextId = std::max (ss.nextId, maxId + 1);
+    // Projects from before Nov 12: the strip's built-in track EQ (now removed from the UI) moves into an
+    // ELooper EQ plug-in at the end of Pre FX, the same place in the chain, so the project sounds the same.
+    for (auto& t : ss.tracks) {
+        bool flat = true;
+        float db[kEqBands];
+        for (int b = 0; b < kEqBands; ++b) { db[b] = pm::eqToDb (t->rt->eq[b].load()); if (std::abs (db[b]) > 0.01f) flat = false; }
+        if (! flat && t->rt->eqEnabled.load()) {
+            auto slot = std::make_shared<PluginSlot>();
+            slot->id = ss.allocateId();
+            slot->description = builtin::eqDescription();
+            slot->pendingState = builtin::eqState (db);
+            t->preFx.push_back (slot);
+        }
+        for (auto& e : t->rt->eq) e.store (0.5f);
+    }
     rebuildGraph();
     retireSession (std::move (old));
     publishTransport();

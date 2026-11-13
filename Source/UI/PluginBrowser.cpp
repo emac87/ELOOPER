@@ -1,4 +1,5 @@
 #include "UI/PluginBrowser.h"
+#include "Engine/BuiltInEq.h"
 #include "UI/Theme.h"
 #include "UI/PluginIcons.h"
 
@@ -201,12 +202,21 @@ void showPluginMenu (EngineController& c, Id trackId, FxChain chain, int insertI
             menu.addSeparator();
         }
 
+        // Built-in effects (ELooper EQ) straight at the top of the Pre / Post FX menus.
+        if (chain == FxChain::Pre || chain == FxChain::Post) {
+            bool any = false;
+            for (size_t i = 0; i < list.size(); ++i)
+                if (builtin::isBuiltIn (list[i])) { menu.addItem (itemFor (i, false)); any = true; }
+            if (any) menu.addSeparator();
+        }
+
         // Recently used
         const auto recent = loadRecent (chain);
         bool anyRecent = false;
         for (auto& id : recent)
             for (size_t i = 0; i < list.size(); ++i)
                 if (list[i].createIdentifierString() == id) {
+                    if (builtin::isBuiltIn (list[i])) break;   // already at the top of the menu
                     if (! anyRecent) { menu.addSectionHeader ("Recent"); anyRecent = true; }
                     menu.addItem (itemFor (i, true));
                     break;
