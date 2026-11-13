@@ -29,6 +29,7 @@ class ChimeraWorklet extends AudioWorkletProcessor {
                 presets.push ({ name: M.UTF8ToString (M._chimera_preset_name (i)),
                                 category: M.UTF8ToString (M._chimera_preset_category (i)) });
             this.port.postMessage ({ type: 'ready', presets, json: this.patchJson(),
+                                     library: JSON.parse (M.UTF8ToString (M._chimera_library_info())),
                                      presetIndex: M._chimera_current_preset() });
             for (const m of this.queue) this.handle (m);
             this.queue = [];
@@ -100,6 +101,13 @@ class ChimeraWorklet extends AudioWorkletProcessor {
                 break;
             }
             case 'builtinCart': M._chimera_builtin_cart (m.layer | 0); this.sendPatch(); break;
+            case 'libraryCart': M._chimera_library_cart (m.layer | 0, m.cart | 0, 0); this.sendPatch(); break;
+            case 'randomLibraryVoice': {
+                const i = M._chimera_random_library_voice (m.layer | 0, m.sameCategory ? 1 : 0);
+                this.port.postMessage ({ type: 'cartVoiceIndex', layer: m.layer | 0, index: i });
+                this.sendPatch();
+                break;
+            }
             case 'cartVoice': M._chimera_cart_voice (m.layer | 0, m.index | 0); this.sendPatch(); break;
             case 'randomCartVoice': {
                 const i = M._chimera_random_cart_voice (m.layer | 0);

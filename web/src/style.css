@@ -58,6 +58,10 @@ select{background:var(--raised);border:1px solid var(--outline);border-radius:4p
 .cap.b{color:var(--text);font-weight:600}
 .lbl{display:flex;align-items:center;gap:6px}.lbl>span{color:var(--dim);flex:none}
 .opTabs{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+.cartCats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.cartCats button{padding:3px 9px;font-size:11px;border-radius:999px;min-height:24px}
+.cartNav{display:grid;grid-template-columns:44px 1fr 44px;gap:6px;align-items:center;margin-bottom:6px}
+.cartNav .cap{text-align:center;font-size:12px}.cartNav button{min-height:28px}
 .cartGrid{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
 .cartGrid button{padding:2px 3px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:left;min-height:22px}
 .cartGrid button small{color:var(--dim);margin-right:3px}.cartGrid button.sel small{color:#003}

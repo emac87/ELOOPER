@@ -47,6 +47,8 @@ bool parseDx7SysEx (const uint8_t* data, size_t size, std::vector<Dx7Patch>& out
 // 155-byte VCED (unpacked) form, used to save a voice inside a Chimera patch.
 std::array<uint8_t, 155> dx7ToVced (const Dx7Patch&) noexcept;
 Dx7Patch dx7FromVced (const uint8_t* vced155) noexcept;
+// One voice in the 128-byte packed form used inside a 32-voice cart.
+Dx7Patch dx7FromPacked (const uint8_t* packed128) noexcept;
 // A 4104-byte bulk dump of up to 32 voices (missing voices = INIT VOICE), for "Save cart".
 std::vector<uint8_t> dx7MakeCart (const std::vector<Dx7Patch>& voices);
 

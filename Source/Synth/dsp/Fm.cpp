@@ -173,6 +173,8 @@ uint8_t checksum (const uint8_t* d, size_t n) noexcept {
 
 } // namespace
 
+Dx7Patch dx7FromPacked (const uint8_t* packed128) noexcept { return fromPacked (packed128); }
+
 // ---------------------------------------------------------------- public patch API
 Dx7Patch dx7InitVoice() noexcept {
     Dx7Patch p;

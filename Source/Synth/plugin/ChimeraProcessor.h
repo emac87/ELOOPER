@@ -9,6 +9,7 @@
 #include <JuceHeader.h>
 #include "Synth/dsp/Synth.h"
 #include "Synth/dsp/Presets.h"
+#include "Synth/dsp/FmLibrary.h"
 
 namespace el::chimera {
 
@@ -35,9 +36,11 @@ public:
     juce::String saveCart (int layer, const juce::File& file);           // writes the layer's cart (with its current voice)
     void loadBuiltinCart (int layer);                                    // Chimera's own 32-voice cart, voice 1
     int randomCartVoice (int layer);                                     // random voice from the layer's cart (built-in if none); returns it
-    juce::String randomCartFromFolder (int layer);                       // random .syx under cartFolder(), then a random voice; "" = ok
-    static juce::File cartFolder();                                      // remembered between sessions; invalid file if never set
-    static void setCartFolder (const juce::File& dir);
+    // The built-in cart library (Synth/dsp/FmLibrary.h): cart 0 is Chimera's own, then the sorted carts.
+    void loadLibraryCart (int layer, int cart, int voice = 0);
+    int libraryCartIndex (int layer) const;                              // the layer's cart if it is a library cart, else -1
+    void stepLibraryCart (int layer, int delta);                         // previous / next library cart (wraps)
+    int randomLibraryVoice (int layer, bool sameCategory);               // random cart (any, or in the layer's category) + random voice; returns the voice
 
     // Dice: a random factory or user preset (returns its name), or a brand-new random patch.
     juce::String randomPreset();

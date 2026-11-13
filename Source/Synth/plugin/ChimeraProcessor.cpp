@@ -259,19 +259,58 @@ juce::String ChimeraProcessor::saveCart (int layer, const juce::File& file)
     return {};
 }
 
-void ChimeraProcessor::loadBuiltinCart (int layer)
+void ChimeraProcessor::loadBuiltinCart (int layer) { loadLibraryCart (layer, 0); }
+
+void ChimeraProcessor::loadLibraryCart (int layer, int cart, int voice)
 {
     if (layer < 0 || layer >= kMaxLayers) return;
-    auto voices = std::make_shared<std::vector<Dx7Patch>> (chimeraCart());
+    cart = juce::jlimit (0, fmLibCartCount() - 1, cart);
+    auto voices = std::make_shared<std::vector<Dx7Patch>> (fmLibCart (cart));
     if (voices->empty()) return;
+    voice = juce::jlimit (0, (int) voices->size() - 1, voice);
     editPatch ([&] (Patch& p) {
         p.carts[(size_t) layer] = voices;
-        p.cartNames[(size_t) layer] = kChimeraCartName;
+        p.cartNames[(size_t) layer] = fmLibCartName (cart);
         auto& lp = p.layers[(size_t) layer];
         lp.engine = Engine::FM;
-        lp.fm = voices->front();
+        lp.fm = (*voices)[(size_t) voice];
         lp.useAmpEnv = false;
     });
+}
+
+int ChimeraProcessor::libraryCartIndex (int layer) const
+{
+    if (layer < 0 || layer >= kMaxLayers || ! working.carts[(size_t) layer]) return -1;
+    return fmLibFindCart (working.cartNames[(size_t) layer]);
+}
+
+void ChimeraProcessor::stepLibraryCart (int layer, int delta)
+{
+    const int n = fmLibCartCount(), cur = libraryCartIndex (layer);
+    loadLibraryCart (layer, cur < 0 ? 0 : ((cur + delta) % n + n) % n);
+}
+
+int ChimeraProcessor::randomLibraryVoice (int layer, bool sameCategory)
+{
+    if (layer < 0 || layer >= kMaxLayers) return -1;
+    auto& rng = juce::Random::getSystemRandom();
+    const int cur = libraryCartIndex (layer);
+    int cart = 0;
+    if (sameCategory && cur >= 0) {
+        const int c = fmLibCartCategory (cur);
+        cart = fmLibCategoryFirstCart (c) + rng.nextInt (fmLibCategoryCarts (c));
+    } else {
+        // every voice equally likely: the last cart of a category can be short
+        int v = rng.nextInt (fmLibVoiceCount());
+        for (cart = 0; cart < fmLibCartCount() - 1; ++cart) {
+            const int size = (int) fmLibCart (cart).size();
+            if (v < size) break;
+            v -= size;
+        }
+    }
+    const int voice = rng.nextInt ((int) fmLibCart (cart).size());
+    loadLibraryCart (layer, cart, voice);
+    return voice;
 }
 
 int ChimeraProcessor::randomCartVoice (int layer)
@@ -294,34 +333,6 @@ namespace {
        #endif
         return base.getChildFile ("ELooper");
     }
-    juce::File cartFolderSetting() { return chimeraDataDir().getChildFile ("Chimera cart folder.txt"); }
-}
-
-juce::File ChimeraProcessor::cartFolder()
-{
-    const auto path = cartFolderSetting().loadFileAsString().trim();
-    return path.isNotEmpty() && juce::File::isAbsolutePath (path) ? juce::File (path) : juce::File();
-}
-
-void ChimeraProcessor::setCartFolder (const juce::File& dir)
-{
-    chimeraDataDir().createDirectory();
-    cartFolderSetting().replaceWithText (dir.getFullPathName());
-}
-
-juce::String ChimeraProcessor::randomCartFromFolder (int layer)
-{
-    const auto dir = cartFolder();
-    if (! dir.isDirectory()) return "Choose a carts folder first.";
-    auto files = dir.findChildFiles (juce::File::findFiles, true, "*.syx;*.SYX");
-    if (files.isEmpty()) return "No .syx files in " + dir.getFullPathName() + ".";
-    // Some files in a big folder may not be DX7 voices: try a few before giving up.
-    for (int attempt = 0; attempt < 8 && ! files.isEmpty(); ++attempt) {
-        const int i = juce::Random::getSystemRandom().nextInt (files.size());
-        if (loadCart (layer, files[i]).isEmpty()) { randomCartVoice (layer); return {}; }
-        files.remove (i);
-    }
-    return "Couldn't find a DX7 cart in " + dir.getFullPathName() + ".";
 }
 
 // ---- presets ------------------------------------------------------------------------------------

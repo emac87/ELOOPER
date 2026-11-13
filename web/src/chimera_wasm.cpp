@@ -3,6 +3,7 @@
 // one call at a time, so there is no locking; patch changes are published between blocks.
 #include "Synth/dsp/Synth.h"
 #include "Synth/dsp/Presets.h"
+#include "Synth/dsp/FmLibrary.h"
 #include "Synth/dsp/PatchJson.h"
 #include <emscripten/emscripten.h>
 #include <algorithm>
@@ -207,6 +208,57 @@ EMSCRIPTEN_KEEPALIVE void chimera_cart_voice (int layer, int index)
     st->working.layers[(size_t) layer].fm = (*cart)[(size_t) index];
     st->working.layers[(size_t) layer].engine = Engine::FM;
     publish();
+}
+
+// ---- built-in cart library (Synth/dsp/FmLibrary.h) ---------------------------------------------
+// The categories as JSON: [{"name":"Chimera","carts":1,"first":0}, ...].
+EMSCRIPTEN_KEEPALIVE const char* chimera_library_info()
+{
+    if (! st) return "[]";
+    std::string s = "[";
+    for (int c = 0; c < fmLibCategoryCount(); ++c) {
+        if (c) s += ",";
+        s += std::string ("{\"name\":\"") + fmLibCategoryName (c) + "\",\"carts\":" + std::to_string (fmLibCategoryCarts (c))
+           + ",\"first\":" + std::to_string (fmLibCategoryFirstCart (c)) + "}";
+    }
+    st->json = s + "]";
+    return st->json.c_str();
+}
+
+// Loads library cart `cart` into a layer and selects `voice`. Returns the cart's voice count.
+EMSCRIPTEN_KEEPALIVE int chimera_library_cart (int layer, int cart, int voice)
+{
+    if (! st || ! validLayer (layer)) return 0;
+    cart = std::clamp (cart, 0, fmLibCartCount() - 1);
+    auto voices = std::make_shared<const std::vector<Dx7Patch>> (fmLibCart (cart));
+    if (voices->empty()) return 0;
+    useCart (layer, voices, fmLibCartName (cart));
+    voice = std::clamp (voice, 0, (int) voices->size() - 1);
+    if (voice > 0) { st->working.layers[(size_t) layer].fm = (*voices)[(size_t) voice]; publish(); }
+    return (int) voices->size();
+}
+
+// Dice: a random voice from the whole library, or (sameCategory) from the category of the
+// layer's cart. Returns the voice's index in its cart.
+EMSCRIPTEN_KEEPALIVE int chimera_random_library_voice (int layer, int sameCategory)
+{
+    if (! st || ! validLayer (layer)) return -1;
+    const int cur = st->working.carts[(size_t) layer] ? fmLibFindCart (st->working.cartNames[(size_t) layer]) : -1;
+    int cart = 0;
+    if (sameCategory && cur >= 0) {
+        const int c = fmLibCartCategory (cur);
+        cart = fmLibCategoryFirstCart (c) + (int) (nextRand() % (uint32_t) fmLibCategoryCarts (c));
+    } else {
+        int v = (int) (nextRand() % (uint32_t) fmLibVoiceCount());
+        for (cart = 0; cart < fmLibCartCount() - 1; ++cart) {
+            const int size = (int) fmLibCart (cart).size();
+            if (v < size) break;
+            v -= size;
+        }
+    }
+    const int voice = (int) (nextRand() % (uint32_t) fmLibCart (cart).size());
+    chimera_library_cart (layer, cart, voice);
+    return voice;
 }
 
 // Dice on the FM page: a random voice from the layer's cart (Chimera's own if none). Returns it.

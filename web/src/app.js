@@ -29,6 +29,7 @@ let clipboardLayer = null;
 const redraws = [];            // canvas/diagram redraw callbacks for the current page
 let refreshers = [];         // control refresh callbacks for the current page
 let cart32 = null;
+let library = [];             // built-in cart categories: [{ name, carts, first }]
 
 const $ = (s, r) => (r || document).querySelector(s);
 function el(tag, cls, parent, text) {
@@ -507,8 +508,6 @@ function engFm(parent) {
   const br = el('div', 'g2', left);
   const lc = el('button', '', br, 'Load cart (.syx)'); lc.onclick = () => $('#fileCart').click();
   const sc = el('button', '', br, 'Save cart'); sc.onclick = () => post({ type: 'saveCart', layer }); sc.title = 'Download the loaded cart as a .syx file';
-  const cc = el('button', '', left, 'Chimera cart'); cc.title = 'Load Chimera’s own 32-voice cart'; cc.onclick = () => { if (L().engine !== 3) { L().engine = 3; flushOnce(); } post({ type: 'builtinCart', layer }); };
-  el('div', 'cap', left, (patch.cartNames && patch.cartNames[layer]) ? 'Cart: ' + patch.cartNames[layer] : 'No cart loaded');
   el('div', 'cap b', left, (FM().name || '').toString().trim());
   // operator editor
   const tabs = el('div', 'opTabs', right);
@@ -538,11 +537,25 @@ function engFm(parent) {
   select(c3, 'L', KB_CURVES, () => OP().kbdLeftCurve, v => OP().kbdLeftCurve = v, 'Left curve');
   select(c3, 'R', KB_CURVES, () => OP().kbdRightCurve, v => OP().kbdRightCurve = v, 'Right curve');
   O(c3, 'Rate scaling', 'kbdRateScaling', { min: 0, max: 7, int: true, def: 0 });
-  // cart grid
-  const vp = panel(parent, 'Cart voices'); const hd = vp.firstChild;
+  // cart browser: category chips, < cart > arrows, dice, then the 32-voice grid
+  const cartNm = (patch.cartNames && patch.cartNames[layer]) || '';
+  const lib = libFind(cartNm);   // { cat, n, cart } when the layer's cart is a built-in one
+  const loadLib = cart => { if (L().engine !== 3) { L().engine = 3; flushOnce(); } lastVoice[layer] = 0; post({ type: 'libraryCart', layer, cart }); };
+  const vp = panel(parent, 'Carts'); const hd = vp.firstChild;
   el('span', 'sp', hd);
-  const dice = el('button', '', hd); dice.innerHTML = DICE_SVG + 'DICE'; dice.title = 'Click: random voice from the cart. Shift-click: pick a random .syx from a folder you choose, then a random voice.';
-  dice.onclick = e => { if (e.shiftKey) $('#fileDir').click(); else post({ type: 'randomCartVoice', layer }); };
+  const dice = el('button', '', hd); dice.innerHTML = DICE_SVG + 'DICE'; dice.title = 'Click: random voice from every cart. Shift-click or long-press: only from this category.';
+  const roll = same => { if (L().engine !== 3) { L().engine = 3; flushOnce(); } lastVoice[layer] = -1; post({ type: 'randomLibraryVoice', layer, sameCategory: same }); };
+  let hold = null, held = false;
+  dice.addEventListener('pointerdown', () => { held = false; hold = setTimeout(() => { held = true; roll(true); }, 550); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => dice.addEventListener(t, () => clearTimeout(hold)));
+  dice.addEventListener('contextmenu', e => e.preventDefault());
+  dice.onclick = e => { if (held) { held = false; return; } roll(e.shiftKey); };
+  const chips = el('div', 'cartCats', vp);
+  library.forEach((c, ci) => { const b = el('button', lib && lib.cat === ci ? 'sel' : '', chips, c.name); b.title = c.name + ': ' + c.carts + (c.carts === 1 ? ' cart' : ' carts'); b.onclick = () => loadLib(c.first); });
+  const nav = el('div', 'cartNav', vp); const total = library.reduce((t, c) => t + c.carts, 0);
+  const pv = el('button', '', nav, '\u25C0'), lab = el('div', 'cap b', nav), nx = el('button', '', nav, '\u25B6'); pv.title = 'Previous cart'; nx.title = 'Next cart';
+  lab.textContent = !cartNm ? 'No cart loaded' : lib && lib.cat > 0 ? library[lib.cat].name + '  \u00B7  ' + lib.n + ' / ' + library[lib.cat].carts : cartNm;
+  pv.onclick = () => loadLib(lib ? (lib.cart + total - 1) % total : 0); nx.onclick = () => loadLib(lib ? (lib.cart + 1) % total : 0);
   const grid2 = el('div', 'cartGrid', vp); const vs = (patch.cartVoices && patch.cartVoices[layer]) || [];
   const cur = (FM().name || '').toString().trim();
   for (let i = 0; i < 32; i++) {
@@ -552,16 +565,16 @@ function engFm(parent) {
   }
 }
 function flushOnce() { dirty = true; flushPatch(); buildTabs(); }
+function libFind(name) {   // "Bass 12" -> { cat, n: 12, cart: index in the whole library }
+  if (name === 'Chimera Voices' && library.length) return { cat: 0, n: 1, cart: 0 };
+  const m = /^(.*) (\d+)$/.exec(name || ''); if (!m) return null;
+  const cat = library.findIndex((c, i) => i > 0 && c.name === m[1]), n = +m[2];
+  return cat > 0 && n >= 1 && n <= library[cat].carts ? { cat, n, cart: library[cat].first + n - 1 } : null;
+}
 async function loadCartFile(file) {
   const bytes = await file.arrayBuffer(); const ly = layer;
   if (patch.layers[ly].engine !== 3) { patch.layers[ly].engine = 3; lastEngine[ly] = 3; dirty = true; flushPatch(); buildTabs(); }
   lastVoice[ly] = -1; post({ type: 'cart', layer: ly, bytes, name: file.name }, [bytes]);
-}
-async function randomFromDir(files) {
-  const syx = Array.from(files).filter(f => /\.syx$/i.test(f.name));
-  if (!syx.length) { toast('No .syx files in that folder'); return; }
-  const f = syx[Math.floor(Math.random() * syx.length)]; await loadCartFile(f); post({ type: 'randomCartVoice', layer });
-  toast('Random cart: ' + f.name);
 }
 
 /* ---------- modulation page ---------- */
@@ -743,7 +756,6 @@ function wireInputs() {
   $('#fileSample').onchange = e => { handleFiles(e.target.files); e.target.value = ''; };
   $('#filePatch').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return;
     try { const o = JSON.parse(await f.text()); if (!o.layers) throw new Error('not a Chimera patch'); loadPatchObj(o); } catch (er) { toast('Could not load patch: ' + er.message); } };
-  $('#fileDir').onchange = e => { const fs = e.target.files; randomFromDir(fs).then(() => { e.target.value = ''; }); };
 }
 
 /* ---------- worklet messages ---------- */
@@ -751,8 +763,9 @@ function applyIncoming(obj) { pendingPatch = null; patch = obj; renderAll(); }
 function onMsg(ev) {
   const m = ev.data || ev; if (!m || !m.type) return;
   switch (m.type) {
-    case 'ready': engineReady = true; clearTimeout(engineWatchdog); presets = m.presets || []; buildPresetList(); if (m.json) applyIncoming(JSON.parse(m.json)); break;
+    case 'ready': engineReady = true; clearTimeout(engineWatchdog); presets = m.presets || []; library = m.library || []; buildPresetList(); if (m.json) applyIncoming(JSON.parse(m.json)); break;
     case 'patch': { const o = JSON.parse(m.json); if (dragging) pendingPatch = o; else applyIncoming(o); break; }
+    case 'cartVoiceIndex': if (m.index >= 0) { lastVoice[m.layer] = m.index; if (m.layer === layer && page === 'sound') buildTabs(); } break;
     case 'presetIndex': presetIndex = m.index; if (topEls.sel) topEls.sel.value = String(presetIndex); break;
     case 'meter': { if (!powered) m = { voices: 0, peak: 0 }; const v = $('#voices'), p = $('#peak'); if (v) v.textContent = m.voices; if (p) { const pk = clamp(m.peak, 0, 1.2); p.style.width = Math.min(pk, 1) * 100 + '%'; p.style.background = pk > .95 ? 'var(--rec)' : pk > .7 ? 'var(--warn)' : 'var(--ok)'; } break; }
     case 'cartFile': download(m.name || 'chimera-cart.syx', m.bytes, 'application/octet-stream'); break;
@@ -844,12 +857,13 @@ if (!window.ChimeraAudio) {
     const port = { postMessage(m) { const back = () => port.onmessage && port.onmessage({ data: { type: 'patch', json: JSON.stringify(p) } }); const say = o => setTimeout(() => port.onmessage && port.onmessage({ data: o }), 5);
       if (m.type === 'patch') p = JSON.parse(m.json);
       else if (m.type === 'preset' || m.type === 'randomPreset') { const i = m.type === 'preset' ? m.index : Math.floor(Math.random() * list.length); p = defaultPatch(); p.name = list[i].name; p.layers[0].engine = (i % 5) + 1; say({ type: 'presetIndex', index: i }); back(); }
+      else if (m.type === 'libraryCart' || m.type === 'randomLibraryVoice') { const c = m.type === 'libraryCart' ? m.cart : Math.floor(Math.random() * 7); p.cartVoices[m.layer] = Array.from({ length: 32 }, (_, i) => 'VOICE ' + (i + 1)); p.cartNames[m.layer] = c === 0 ? 'Chimera Voices' : (c < 4 ? 'Bass ' + c : 'Bells ' + (c - 3)); p.layers[m.layer].engine = 3; back(); }
       else if (m.type === 'builtinCart' || m.type === 'cart') { p.cartVoices[m.layer] = Array.from({ length: 32 }, (_, i) => 'VOICE ' + (i + 1)); p.cartNames[m.layer] = m.name || 'Chimera Voices'; back(); }
       else if (m.type === 'cartVoice') { p.layers[m.layer].fm.name = p.cartVoices[m.layer][m.index]; p.layers[m.layer].fm.algorithm = m.index % 32; back(); }
       else if (m.type === 'sample') { p.sampleNames[m.layer] = m.name; back(); }
       else if (m.type === 'saveCart') say({ type: 'cartFile', layer: m.layer, bytes: new ArrayBuffer(4104), name: 'cart.syx' }); },
       onmessage: null };
-    setTimeout(() => port.onmessage && port.onmessage({ data: { type: 'ready', presets: list, json: JSON.stringify(p) } }), 20);
+    setTimeout(() => port.onmessage && port.onmessage({ data: { type: 'ready', presets: list, library: [{ name: 'Chimera', carts: 1, first: 0 }, { name: 'Bass', carts: 3, first: 1 }, { name: 'Bells', carts: 3, first: 4 }], json: JSON.stringify(p) } }), 20);
     setInterval(() => port.onmessage && port.onmessage({ data: { type: 'meter', voices: 0, peak: 0 } }), 100);
     return { port, connect() {}, disconnect() {} };
   } };
