@@ -29,8 +29,27 @@ namespace {
 
     // The strip's EQ on / off button; right-click opens the EQ editor.
     struct EqButton : public juce::TextButton {
-        EqButton() : juce::TextButton ("On") {}
+        EqButton() : juce::TextButton ("EQ") {}
         std::function<void()> onRightClick;
+        // Drawn as a power symbol: lit (accent) when the EQ is on, dim when it is off.
+        void paintButton (juce::Graphics& g, bool over, bool down) override
+        {
+            const bool on = getToggleState();
+            auto r = getLocalBounds().toFloat().reduced (0.5f);
+            g.setColour (on ? theme::accent.darker (0.4f) : theme::panelRaised);
+            if (over || down) g.setColour ((on ? theme::accent.darker (0.4f) : theme::panelRaised).brighter (down ? 0.25f : 0.12f));
+            g.fillRoundedRectangle (r, 4.0f);
+            g.setColour (on ? theme::accent : theme::outline);
+            g.drawRoundedRectangle (r, 4.0f, 1.0f);
+            const float d = juce::jmin (r.getWidth(), r.getHeight()) - 9.0f;
+            const auto c = r.getCentre();
+            juce::Path arc;
+            arc.addCentredArc (c.x, c.y + 0.5f, d * 0.5f, d * 0.5f, 0.0f,
+                               juce::MathConstants<float>::pi * 0.22f, juce::MathConstants<float>::pi * 1.78f, true);
+            g.setColour (on ? juce::Colours::white : theme::textDim);
+            g.strokePath (arc, juce::PathStrokeType (1.8f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.drawLine (c.x, c.y - d * 0.62f, c.x, c.y - d * 0.05f, 1.8f);
+        }
         void mouseDown (const juce::MouseEvent& e) override
         {
             if (e.mods.isPopupMenu()) { if (onRightClick) onRightClick(); return; }
@@ -91,6 +110,18 @@ ChannelStrip::ChannelStrip (EngineController& c, PresetManager& p, Id id)
         else showOutputPicker (controller, trackId, c2);
     };
     addAndMakeVisible (*outputSlot);
+
+    {
+        // EQ on / off as a power button, the very last thing on the strip (right-click opens the EQ editor).
+        auto tb = std::make_unique<EqButton>();
+        tb->setClickingTogglesState (true);
+        tb->setTooltip ("EQ on / off (right-click: open the EQ)");
+        tb->onClick = [this] { if (auto tr = track(); tr && tr->rt && eqToggle) tr->rt->eqEnabled.store (eqToggle->getToggleState()); };
+        tb->onRightClick = [this] { openEqEditor(); };
+        eqToggle = tb.get();
+        eqOwned = std::move (tb);
+        addAndMakeVisible (*eqOwned);
+    }
 
     rebuild();
 }
@@ -166,7 +197,6 @@ void ChannelStrip::buildContent (const TrackModel& t)
     content.removeAllChildren();
     content.titles.clear();
     owned.clear(); chips.clear(); sendBars.clear();
-    eqToggle = nullptr;
 
     const int rw = theme::stripWidth - 2 * kM - 6;   // leave room for the scrollbar
     int y = 2;
@@ -204,20 +234,6 @@ void ChannelStrip::buildContent (const TrackModel& t)
         chain ("MIDI FX", FxChain::MidiFx, t.midiFx, "+ MIDI FX");
     }
     if (! loopPageTrack) chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");
-
-    {
-        // EQ on / off, full slot width (right-click opens the EQ editor).
-        auto tb = std::make_unique<EqButton>();
-        eqToggle = tb.get();
-        tb->setClickingTogglesState (true);
-        tb->setTooltip ("EQ on / off (right-click: open the EQ)");
-        tb->setColour (juce::TextButton::buttonColourId, theme::panelRaised);
-        tb->setColour (juce::TextButton::buttonOnColourId, theme::accent.darker (0.4f));
-        tb->onClick = [this] { if (auto tr = track(); tr && tr->rt && eqToggle) tr->rt->eqEnabled.store (eqToggle->getToggleState()); };
-        tb->onRightClick = [this] { openEqEditor(); };
-        add (std::move (tb))->setBounds (kM, y, rw, kSlotH);
-        y += kSlotH + kSlotGap + 3;
-    }
 
     if (! isMaster) {
         title ("Sends");
@@ -272,8 +288,10 @@ void ChannelStrip::resized()
         armR = monR = {};
     }
 
-    // Bottom: output, fader + meter, pan, In. The fader grows with the panel.
+    // Bottom (from the very bottom up): EQ power button, output, fader + meter, pan, In. The fader grows with the panel.
     int bottom = H - 6;
+    eqOwned->setBounds (kM, bottom - kSlotH, bw, kSlotH);
+    bottom -= kSlotH + 4;
     outputSlot->setBounds (kM, bottom - kSlotH, bw, kSlotH);
     bottom -= kSlotH + 6;
     const int topH = loopPageTrack ? kHeaderH + 2 : kTopH;

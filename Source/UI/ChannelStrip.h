@@ -73,7 +73,8 @@ private:
     std::vector<std::unique_ptr<juce::Component>> owned;   // children of `content`
     std::vector<FxChip*> chips;
     std::vector<ValueBar*> sendBars;
-    juce::TextButton* eqToggle = nullptr;
+    juce::TextButton* eqToggle = nullptr;        // = eqOwned, the power button at the very bottom
+    std::unique_ptr<juce::TextButton> eqOwned;
     std::unique_ptr<ValueBar> gainBar, panBar, fader;
     std::unique_ptr<MenuSlot> outputSlot;
 };
