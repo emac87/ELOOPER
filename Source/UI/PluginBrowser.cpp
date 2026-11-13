@@ -278,12 +278,16 @@ void showPluginMenu (EngineController& c, Id trackId, FxChain chain, int insertI
                 const auto& d = list[(size_t) (result - firstPluginId)];
                 rememberRecent (chain, d.createIdentifierString());
                 c.insertPlugin (trackId, chain, insertIndex, d,
-                    [insertedCb] (Id slotId, juce::String error)
+                    [&c, insertedCb] (Id slotId, juce::String error)
                     {
                         if (slotId == kInvalidId || error.isNotEmpty())
                             showError (error.isNotEmpty() ? error : juce::String ("The plug-in could not be loaded."));
-                        else if (insertedCb)
-                            insertedCb (slotId);
+                        else
+                        {
+                            if (insertedCb) insertedCb (slotId);
+                            // Pop the new plug-in's window up by itself, after a short delay.
+                            c.showPluginEditorSoon (slotId);
+                        }
                     });
             }
         });

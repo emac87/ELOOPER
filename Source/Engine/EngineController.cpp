@@ -73,6 +73,7 @@ EngineController::EngineController (bool openAudioDevice)
 }
 
 EngineController::~EngineController() {
+    alive->store (false);
     impl->stopTimer();
     devices.removeChangeListener (impl.get());
     if (auto xml = devices.createStateXml()) xml->writeTo (deviceStateFile());
@@ -799,6 +800,17 @@ void EngineController::setPluginBypass (Id slotId, bool b) {
 void EngineController::showPluginEditor (Id slotId) {
     auto [t, slot] = sessionPtr->findPlugin (slotId);
     if (slot && slot->instance) plugins.showEditor (slot);
+}
+
+void EngineController::showPluginEditorSoon (Id slotId, int delayMs) {
+    auto flag = alive;
+    const Session* expected = sessionPtr.get();
+    juce::Timer::callAfterDelay (juce::jmax (0, delayMs), [this, flag, expected, slotId]
+    {
+        // Skip if ELooper is closing, another project was opened, or the plug-in was removed.
+        if (! flag->load() || sessionPtr.get() != expected) return;
+        showPluginEditor (slotId);
+    });
 }
 
 void EngineController::togglePluginEditor (Id slotId) {

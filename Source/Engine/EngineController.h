@@ -6,6 +6,8 @@
 #include "Model/Session.h"
 #include "Engine/PluginHost.h"
 #include <functional>
+#include <atomic>
+#include <memory>
 
 namespace el {
 
@@ -122,6 +124,10 @@ public:
     void setPluginBypass (Id slotId, bool bypassed);
     void showPluginEditor (Id slotId);
     void togglePluginEditor (Id slotId);   // show, or hide if already showing
+    // Opens a freshly added plug-in's window after a short pause, so the plug-in has finished
+    // starting up and the audio graph is running again before its editor is created (some AUs
+    // crash or hang if the editor opens straight away). Does nothing if the slot is gone by then.
+    void showPluginEditorSoon (Id slotId, int delayMs = 300);
     bool isPluginEditorOpen (Id slotId) const { return plugins.isEditorOpen (slotId); }
     juce::MemoryBlock getPluginState (Id slotId) const;
     void setPluginState (Id slotId, const juce::MemoryBlock& state);
@@ -234,6 +240,7 @@ private:
     friend struct Impl;
     std::unique_ptr<Impl> impl;
     std::unique_ptr<Session> sessionPtr;
+    std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>> (true);
     juce::AudioDeviceManager devices;
     PluginHost plugins;
     std::unique_ptr<AudioEngine> audioEngine;

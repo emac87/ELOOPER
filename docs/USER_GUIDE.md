@@ -221,7 +221,7 @@ Click the **Mixer** button in the middle of the bar along the bottom of the page
 
 **Scanning:** open **ELooper > Settings > Plug-ins** and click **Scan for Plug-ins**. The plug-in menus are built from the scan, so scan again after you install a new plug-in. See **Choosing a plug-in** in [Mixer and routing](#mixer-and-routing) for how the menus are organised.
 
-**Inserting:** click an empty slot on the mixer strip, or choose **Instrument...** from an instrument track's menu. Click the plug-in to open its window.
+**Inserting:** click an empty slot on the mixer strip, or choose **Instrument...** from an instrument track's menu. The new plug-in's window opens by itself a moment later (after a short pause, so the plug-in has finished starting up); close it and click the plug-in's icon to open it again. Opening a project or a preset does not pop windows up.
 
 **Tempo and position:** hosted plug-ins receive the session tempo and song position, so tempo-synced effects and instruments follow ELooper.
 
