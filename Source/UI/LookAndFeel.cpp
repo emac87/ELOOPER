@@ -208,6 +208,36 @@ void ELooperLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& sb, 
 
 namespace ui {
 
+namespace {
+    juce::Component::SafePointer<juce::Component> alertHost;
+
+    // Shows w modally (it deletes itself). On iOS it goes inside the registered host view.
+    void present (juce::AlertWindow* w, std::function<void (int)> done)
+    {
+       #if JUCE_IOS
+        if (auto* h = alertHost.getComponent())
+        {
+            w->removeFromDesktop();
+            h->addAndMakeVisible (w);
+            w->setCentrePosition (h->getLocalBounds().getCentre());
+        }
+       #endif
+        w->enterModalState (true, juce::ModalCallbackFunction::create ([done] (int r) { if (done) done (r); }), true);
+    }
+}
+
+void setAlertHost (juce::Component* host) { alertHost = host; }
+
+juce::Component* hostFor (juce::Component* c)
+{
+   #if JUCE_IOS
+    return c != nullptr ? c->getTopLevelComponent() : nullptr;
+   #else
+    juce::ignoreUnused (c);
+    return nullptr;
+   #endif
+}
+
 void askText (const juce::String& title, const juce::String& message, const juce::String& initial,
               std::function<void (juce::String)> onOk)
 {
@@ -215,27 +245,40 @@ void askText (const juce::String& title, const juce::String& message, const juce
     w->addTextEditor ("text", initial);
     w->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
     w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    w->enterModalState (true, juce::ModalCallbackFunction::create ([w, onOk] (int r) {
+    present (w, [w, onOk] (int r) {
         if (r == 1 && onOk) onOk (w->getTextEditorContents ("text"));
-    }), true);
+    });
 }
 
 void confirm (const juce::String& title, const juce::String& message, const juce::String& okText,
               std::function<void()> onOk)
 {
+   #if JUCE_IOS
+    auto* w = new juce::AlertWindow (title, message, juce::MessageBoxIconType::QuestionIcon);
+    w->addButton (okText, 1, juce::KeyPress (juce::KeyPress::returnKey));
+    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    present (w, [onOk] (int r) { if (r == 1 && onOk) onOk(); });
+   #else
     juce::AlertWindow::showAsync (juce::MessageBoxOptions()
                                       .withIconType (juce::MessageBoxIconType::QuestionIcon)
                                       .withTitle (title).withMessage (message)
                                       .withButton (okText).withButton ("Cancel"),
                                   [onOk] (int r) { if (r == 1 && onOk) onOk(); });
+   #endif
 }
 
 void alert (const juce::String& title, const juce::String& message)
 {
+   #if JUCE_IOS
+    auto* w = new juce::AlertWindow (title, message, juce::MessageBoxIconType::WarningIcon);
+    w->addButton ("OK", 0, juce::KeyPress (juce::KeyPress::returnKey));
+    present (w, nullptr);
+   #else
     juce::AlertWindow::showAsync (juce::MessageBoxOptions()
                                       .withIconType (juce::MessageBoxIconType::WarningIcon)
                                       .withTitle (title).withMessage (message).withButton ("OK"),
                                   nullptr);
+   #endif
 }
 
 } // namespace ui

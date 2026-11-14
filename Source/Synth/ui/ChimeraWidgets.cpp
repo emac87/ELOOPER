@@ -1,4 +1,5 @@
 #include "Synth/ui/ChimeraWidgets.h"
+#include "UI/LookAndFeel.h"
 
 namespace el::chimera {
 
@@ -96,7 +97,7 @@ void MenuButton::show()
     juce::PopupMenu m;
     if (buildMenu) buildMenu (m);
     juce::Component::SafePointer<MenuButton> sp (this);
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMinimumWidth (getWidth()),
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withParentComponent (el::ui::hostFor (this)).withMinimumWidth (getWidth()),
                      [sp] (int r) { if (sp != nullptr && r > 0 && sp->onChoose) sp->onChoose (r); });
 }
 

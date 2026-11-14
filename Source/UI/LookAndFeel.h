@@ -45,6 +45,13 @@ namespace ui {
     void confirm (const juce::String& title, const juce::String& message, const juce::String& okText,
                   std::function<void()> onOk);
     void alert (const juce::String& title, const juce::String& message);
+
+    // iPhone/iPad: a plug-in (AUv3 in AUM etc.) can't open windows of its own, so pop-up menus,
+    // file choosers and the alerts above must open inside the plug-in's view.
+    // The editor registers itself as the alert host; menus and file choosers take hostFor (this).
+    void setAlertHost (juce::Component* host);   // nullptr to clear
+    // Parent for a menu or FileChooser shown from `c`: its top-level view on iOS, nullptr elsewhere.
+    juce::Component* hostFor (juce::Component* c);
 }
 
 } // namespace el

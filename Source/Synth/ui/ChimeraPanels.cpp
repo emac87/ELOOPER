@@ -352,7 +352,8 @@ private:
     {
         const int layer = ctx.layer;
         chooser = std::make_unique<juce::FileChooser> ("Load sample", juce::File::getSpecialLocation (juce::File::userMusicDirectory),
-                                                        "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg");
+                                                        "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.ogg",
+                                                        true, false, el::ui::hostFor (this));
         juce::Component::SafePointer<SamplerSub> sp (this);
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                               [sp, layer] (const juce::FileChooser& fc) {
@@ -561,7 +562,8 @@ private:
     void chooseCart()
     {
         const int layer = ctx.layer;
-        chooser = std::make_unique<juce::FileChooser> ("Load DX7 cartridge", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.syx");
+        chooser = std::make_unique<juce::FileChooser> ("Load DX7 cartridge", juce::File::getSpecialLocation (juce::File::userDocumentsDirectory), "*.syx",
+                                                        true, false, el::ui::hostFor (this));
         juce::Component::SafePointer<FmSub> sp (this);
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                               [sp, layer] (const juce::FileChooser& fc) {
@@ -577,7 +579,8 @@ private:
         auto def = juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
         const auto nm = ctx.P().cartNames[(size_t) layer];
         def = def.getChildFile ((nm.empty() ? juce::String ("Chimera Cart") : juce::String (nm)) + ".syx");
-        chooser = std::make_unique<juce::FileChooser> ("Save DX7 cartridge", def, "*.syx");
+        chooser = std::make_unique<juce::FileChooser> ("Save DX7 cartridge", def, "*.syx",
+                                                        true, false, el::ui::hostFor (this));
         juce::Component::SafePointer<FmSub> sp (this);
         chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
                               [sp, layer] (const juce::FileChooser& fc) {

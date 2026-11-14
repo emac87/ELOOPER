@@ -154,7 +154,7 @@ private:
         m.addItem (3, "Load from file...");
         m.addItem (4, "Show preset folder");
         juce::Component::SafePointer<TopBar> sp (this);
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (presetMenu).withMinimumWidth (presetMenu->getWidth()),
+        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (presetMenu).withParentComponent (el::ui::hostFor (presetMenu)).withMinimumWidth (presetMenu->getWidth()),
                          [sp] (int id) { if (sp != nullptr && id > 0) sp->handleMenu (id); });
     }
 
@@ -184,7 +184,8 @@ private:
     void saveAs()
     {
         auto def = ChimeraProcessor::presetFolder().getChildFile (juce::File::createLegalFileName (juce::String (ctx.P().name)) + ".chimera");
-        chooser = std::make_unique<juce::FileChooser> ("Save Chimera preset", def, "*.chimera");
+        chooser = std::make_unique<juce::FileChooser> ("Save Chimera preset", def, "*.chimera",
+                                                        true, false, el::ui::hostFor (this));
         juce::Component::SafePointer<TopBar> sp (this);
         chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
                               [sp] (const juce::FileChooser& fc) {
@@ -196,7 +197,8 @@ private:
     }
     void loadFromFile()
     {
-        chooser = std::make_unique<juce::FileChooser> ("Load Chimera preset", ChimeraProcessor::presetFolder(), "*.chimera");
+        chooser = std::make_unique<juce::FileChooser> ("Load Chimera preset", ChimeraProcessor::presetFolder(), "*.chimera",
+                                                        true, false, el::ui::hostFor (this));
         juce::Component::SafePointer<TopBar> sp (this);
         chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                               [sp] (const juce::FileChooser& fc) {
@@ -311,6 +313,7 @@ ChimeraEditor::ChimeraEditor (ChimeraProcessor& p)
     : juce::AudioProcessorEditor (p), proc (p), ctx { p, 0 }
 {
     setLookAndFeel (&laf);
+    el::ui::setAlertHost (this);   // iPhone/iPad: Chimera's alerts open inside this view
     for (int i = 0; i < kMaxLayers; ++i) {
         const auto e = proc.patch().layers[(size_t) i].engine;
         lastEngine[i] = e == Engine::Off ? Engine::Analog : e;
@@ -409,6 +412,7 @@ ChimeraEditor::ChimeraEditor (ChimeraProcessor& p)
 
 ChimeraEditor::~ChimeraEditor()
 {
+    el::ui::setAlertHost (nullptr);
     setLookAndFeel (nullptr);
     stopTimer();
     proc.removeChangeListener (this);
