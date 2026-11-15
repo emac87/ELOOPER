@@ -110,7 +110,10 @@ struct PluginHost::Impl {
             std::vector<Job> jobs;
             for (int f = 0; f < formats.getNumFormats(); ++f) {
                 auto* format = formats.getFormat (f);
-                for (auto& id : format->searchPathsForPlugins (format->getDefaultLocationsToSearch(), true, false))
+                // true = include AUv3 (app-extension) plug-ins such as DrumBridge. They need the
+                // message loop free while loading, which the scan child gives them (it scans on a
+                // background thread) and so does createPluginInstanceAsync when a track loads one.
+                for (auto& id : format->searchPathsForPlugins (format->getDefaultLocationsToSearch(), true, true))
                     if (! known.getBlacklistedFiles().contains (id) && ! known.isListingUpToDate (id, *format))
                         jobs.push_back ({ format->getName(), id });
             }
