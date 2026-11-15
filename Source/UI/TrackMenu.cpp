@@ -104,7 +104,8 @@ void showChainMenu (EngineController& controller, PresetManager& presets, Id tra
     struct Entry { Id slotId; bool bypassed; int index; };
     std::vector<Entry> entries;
     juce::PopupMenu m;
-    m.addSectionHeader (chain == FxChain::Pre ? "Pre FX (before the fader)" : "Post FX (after the fader)");
+    m.addSectionHeader (chain == FxChain::Pre ? "Pre FX (before the fader)" : chain == FxChain::Post ? "Post FX (after the fader)"
+                                              : "MIDI FX (before the instrument)");
     for (int i = 0; i < (int) list->size(); ++i) {
         const auto& p = (*list)[(size_t) i];
         if (p == nullptr) continue;

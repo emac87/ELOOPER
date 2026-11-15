@@ -1,6 +1,6 @@
 #pragma once
 // The label under each loop-page column (pinned along the bottom of the screen): colour stripe,
-// plug-in icon, name, input and the track controls (M / S / arm, monitor, Pre FX / Post FX, In, Pan; see
+// plug-in icon, name, input and the track controls (M / S / arm, monitor, Pre FX / Post FX, In, Pan, MIDI FX; see
 // TrackControls). The loop boxes above only trigger loops. Click elsewhere selects; double-click
 // renames; right-click opens the track menu (which also has Rename); drag sideways reorders. A multi-out instrument shows an "outs"
 // toggle that folds its outputs and sum folder away.

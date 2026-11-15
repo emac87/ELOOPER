@@ -101,7 +101,18 @@ private:
     bool hasArm = false, muted = false, soloed = false, armed = false, muteOpen = false;
 };
 
-// ---- Pre FX / Post FX ------------------------------------------------------------------------------
+// ---- Pre FX / Post FX / MIDI FX ----------------------------------------------------------------------
+namespace {
+    const std::vector<PluginSlotPtr>& chainOf (const TrackModel& t, FxChain ch)
+    {
+        return ch == FxChain::Pre ? t.preFx : ch == FxChain::Post ? t.postFx : t.midiFx;
+    }
+    juce::String chainName (FxChain ch)
+    {
+        return ch == FxChain::Pre ? "Pre FX" : ch == FxChain::Post ? "Post FX" : "MIDI FX";
+    }
+}
+
 class TrackControls::ChainButton : public juce::Component, public juce::SettableTooltipClient {
 public:
     ChainButton (EngineController& c, Selection& s, PresetManager& p, Id id, FxChain ch)
@@ -115,10 +126,11 @@ public:
     {
         auto t = controller.session().findTrack (trackId);
         if (t == nullptr) return;
-        const auto& list = chain == FxChain::Pre ? t->preFx : t->postFx;
+        const auto& list = chainOf (*t, chain);
         count = (int) list.size();
         colour = t->colour;
-        juce::String tip = chain == FxChain::Pre ? "Pre FX (before the fader)" : "Post FX (after the fader)";
+        juce::String tip = chain == FxChain::Pre ? "Pre FX (before the fader)" : chain == FxChain::Post ? "Post FX (after the fader)"
+                                                 : "MIDI FX (before the instrument)";
         if (count == 0) tip << ": empty, click to add a plug-in";
         else {
             tip << ":";
@@ -134,7 +146,7 @@ public:
         auto t = controller.session().findTrack (trackId);
         if (t == nullptr) return;
         bool o = false;
-        for (auto& p : chain == FxChain::Pre ? t->preFx : t->postFx)
+        for (auto& p : chainOf (*t, chain))
             if (p && controller.isPluginEditorOpen (p->id)) { o = true; break; }
         if (o != open) { open = o; repaint(); }
     }
@@ -149,7 +161,7 @@ public:
         g.drawRoundedRectangle (b, 4.0f, 1.0f);
         g.setColour (open ? juce::Colours::white : count > 0 ? theme::text : theme::textDim);
         g.setFont (theme::font (11.0f, count > 0));
-        juce::String text = chain == FxChain::Pre ? "Pre FX" : "Post FX";
+        juce::String text = chainName (chain);
         if (count > 1) text << " " << count;
         g.drawFittedText (text, getLocalBounds().reduced (2, 0), juce::Justification::centred, 1, 0.8f);
     }
@@ -235,8 +247,10 @@ TrackControls::TrackControls (EngineController& c, Selection& s, PresetManager& 
     pre = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::Pre);
     post = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::Post);
     monitor = std::make_unique<MonitorButton> (c, s, trackId);
-    if (auto t = c.session().findTrack (trackId))
+    if (auto t = c.session().findTrack (trackId)) {
         hasMonitor = t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument;
+        if (t->kind == TrackKind::Instrument) midi = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::MidiFx);
+    }
 
     gainBar = std::make_unique<ValueBar>();
     bindValueBar (*gainBar, c, trackId, { ParamKind::InputGain, kInvalidId, -1 });
@@ -261,13 +275,15 @@ void TrackControls::addTo (juce::Component& parent)
     parent.addAndMakeVisible (*pre);
     parent.addAndMakeVisible (*post);
     if (hasMonitor) parent.addAndMakeVisible (*monitor);
+    if (midi) parent.addAndMakeVisible (*midi);
     parent.addAndMakeVisible (*gainBar);
     parent.addAndMakeVisible (*panBar);
 }
 
 void TrackControls::layout (juce::Rectangle<int> iconR, juce::Rectangle<int> msr, juce::Rectangle<int> monR, juce::Rectangle<int> fx,
-                            juce::Rectangle<int> inR, juce::Rectangle<int> panR)
+                            juce::Rectangle<int> inR, juce::Rectangle<int> panR, juce::Rectangle<int> midiR)
 {
+    if (midi) midi->setBounds (midiR);
     gainBar->setBounds (inR);
     panBar->setBounds (panR);
     icon->setBounds (iconR);
@@ -290,6 +306,7 @@ void TrackControls::refresh()
     icon->refresh();
     pre->refresh();
     post->refresh();
+    if (midi) midi->refresh();
 }
 
 void TrackControls::poll()
@@ -298,6 +315,7 @@ void TrackControls::poll()
     buttons->poll();
     pre->poll();
     post->poll();
+    if (midi) midi->poll();
     if (hasMonitor) monitor->poll();
 }
 

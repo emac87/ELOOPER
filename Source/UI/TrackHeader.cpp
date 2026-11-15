@@ -49,10 +49,14 @@ void TrackHeader::pollValues() { controls.pollValues(); }
 void TrackHeader::resized()
 {
     const int w = getWidth(), m = 5;
-    // icon + name | input | M S R I (I = input monitor) | Pre FX Post FX | In | Pan | outs
+    // icon + name | input | M S R I (I = input monitor) | Pre FX Post FX | In | Pan | MIDI FX (+ outs)
+    juce::Rectangle<int> last (m, 151, w - 2 * m, 20), midiR;
+    folderR = {};
+    if (controls.hasMidiFx() && numOuts > 0) { midiR = last.withWidth ((last.getWidth() - 3) / 2); folderR = last.withTrimmedLeft (midiR.getWidth() + 3); }
+    else if (controls.hasMidiFx()) midiR = last;
+    else if (numOuts > 0) folderR = last;
     controls.layout ({ m, 10, 24, 24 }, { m, 56, w - 2 * m, 22 }, {}, { m, 81, w - 2 * m, 19 },
-                     { m, 104, w - 2 * m, 20 }, { m, 127, w - 2 * m, 20 });
-    folderR = numOuts > 0 ? juce::Rectangle<int> (m, 151, w - 2 * m, 20) : juce::Rectangle<int>();
+                     { m, 104, w - 2 * m, 20 }, { m, 127, w - 2 * m, 20 }, midiR);
 }
 
 void TrackHeader::paint (juce::Graphics& g)
@@ -86,7 +90,8 @@ void TrackHeader::paint (juce::Graphics& g)
         g.drawRoundedRectangle (r, 4.0f, 1.0f);
         g.setColour (theme::accent);
         g.setFont (theme::font (11.5f, true));
-        g.drawText (juce::String (folderOpen ? "Hide " : "Show ") + juce::String (numOuts) + " outs", folderR, juce::Justification::centred);
+        g.drawFittedText (juce::String (folderOpen ? "Hide " : "Show ") + juce::String (numOuts) + " outs", folderR.reduced (2, 0),
+                          juce::Justification::centred, 1, 0.75f);
     }
 }
 

@@ -184,7 +184,7 @@ void ChannelStrip::buildContent (const TrackModel& t)
             chip (FxChain::Instrument, 0, t.instrument);
             y += 3;
         }
-        chain ("MIDI FX", FxChain::MidiFx, t.midiFx, "+ MIDI FX");
+        if (! loopPageTrack) chain ("MIDI FX", FxChain::MidiFx, t.midiFx, "+ MIDI FX");   // else: on the track label
     }
     if (! loopPageTrack) chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");
 
