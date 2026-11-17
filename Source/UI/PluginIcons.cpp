@@ -244,6 +244,7 @@ Kind channelKind (TrackKind k)
         case TrackKind::Bus: return Kind::Bus;
         case TrackKind::Master: return Kind::Master;
         case TrackKind::AuxOut: return Kind::AuxOut;
+        case TrackKind::Midi: return Kind::MidiFx;
     }
     return Kind::Audio;
 }

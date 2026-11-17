@@ -99,6 +99,7 @@ struct TrackModel {
     juce::String midiInputDevice;   // device identifier; empty = all devices
     int midiChannel = 0;            // 0 = omni, 1..16
     Id recordSource = kInvalidId;   // resample: record another track's output (used by bounce)
+    Id midiTarget = kInvalidId;     // MIDI tracks: the Instrument / MIDI track their MIDI output plays ("MIDI To")
 
     // Processing chain:  [MIDI FX] -> [instrument] -> input gain -> loops + monitored input
     //                    -> pre-fader inserts -> graphic EQ -> fader / pan -> post-fader inserts
@@ -128,6 +129,7 @@ struct TrackModel {
     TrackRtPtr rt;
 
     bool isBusLike() const noexcept { return kind == TrackKind::Bus || kind == TrackKind::Master; }
+    bool isMidiLike() const noexcept { return kind == TrackKind::Instrument || kind == TrackKind::Midi; }   // holds MIDI loops
     PluginSlotPtr findPlugin (Id slotId) const;
     std::vector<PluginSlotPtr> allPlugins() const;  // midiFx, instrument, pre, post
 };

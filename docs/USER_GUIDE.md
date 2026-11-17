@@ -60,19 +60,38 @@ The **Loops** page is the main screen. It has no mixer controls, only loops. Eac
 
 ## Tracks
 
-There are five kinds of track:
+There are six kinds of track:
 
 | Kind | What it does |
 |---|---|
 | **Audio** | Records from an audio input. |
 | **Instrument** | Takes MIDI input and plays a software instrument: an Audio Unit, such as the [Chimera](#chimera--built-in-synth) synth. Its MIDI loops record that input. |
+| **MIDI** | Takes MIDI input (and MIDI loops), runs it through MIDI plug-ins such as DrumBridge or an arpeggiator, and plays the result on another track (its **MIDI To**). It makes no sound of its own. See [MIDI tracks](#midi-tracks). |
 | **Bus** | Receives sends and track outputs. It can record what it receives. |
 | **Master** | The final mix. It goes to the hardware output pair. Every session has one. |
 | **AuxOut** | An extra stereo output of a multi-output instrument. See [Mixer and routing](#mixer-and-routing). |
 
 A new session starts with one audio track and one instrument track.
 
-**Adding tracks:** click **+ Add Track** below the last track and choose Audio, Instrument or Bus. You can also use the **Track** menu (Add Audio Track, Add Instrument Track, Add Bus).
+**Adding tracks:** click **+ Add Track** below the last track and choose Audio, Instrument, MIDI or Bus. You can also use the **Track** menu (Add Audio Track, Add Instrument Track, Add MIDI Track, Add Bus).
+
+### MIDI tracks
+
+A MIDI track holds MIDI plug-ins (DrumBridge, arpeggiators, chord tools) instead of an instrument, and sends their output to another track to play. Use one when the same pads or MIDI loops should go through DrumBridge into a drum plug-in on another track.
+
+1. Choose **Add MIDI Track**. The plug-in menu opens: pick DrumBridge (AU MIDI Effects). Its window opens by itself.
+2. Its label shows **To ▸** and the track it plays. A new MIDI track plays the instrument track your keyboard was on (or the first instrument track). Click **To ▸** to pick another Instrument or MIDI track, or None.
+3. **MIDI FX** under it adds more MIDI plug-ins after the first; the plug-in icon shows or hides the first one.
+4. Select the MIDI track and play: your pads go through DrumBridge into the instrument. **+** adds MIDI loops; they record what you play *before* DrumBridge, so changing a drum map later changes old loops too.
+
+A MIDI track has **M**, **S**, record arm and **I** like an instrument track, but no Pre / Post FX, In, Pan, sends or output. On the mixer its strip only shows its MIDI FX and **To ▸** at the bottom. MIDI can't be sent round in a circle (a MIDI track can't end up playing itself).
+
+### Your keyboard follows the selected track
+
+Live MIDI plays the selected Instrument or MIDI track, like in Logic: click a track (or one of its loops) and play. A small keyboard on the label shows which track your keyboard plays. Selecting an audio track or a bus keeps the last one. Until you select one, every instrument track hears the keyboard (as before).
+
+- A track whose **MIDI Input** is set to one particular device keeps listening to that device whatever is selected. Use this to keep, say, the KeyLab pads on the DrumBridge track while the keys follow the selection.
+- Turn it off with **Track > MIDI Input Follows Selected Track**. Then every track set to All Devices hears the keyboard again.
 
 **Adding loops:** each track row ends with a **+** button. It adds an audio loop (MIDI loop on instrument tracks). Automation loops are hidden for now; automation will come back in a different form.
 
@@ -82,13 +101,14 @@ A new session starts with one audio track and one instrument track.
 
 - **Rename...** and **Colour**.
 - **Input**: None, a single input, or a stereo pair (audio tracks only).
-- **MIDI Input**: the MIDI device (or All Devices), and the MIDI channel (Omni or 1 to 16). Instrument tracks only.
+- **MIDI Input**: the MIDI device (or All Devices, which follows the selected track), and the MIDI channel (Omni or 1 to 16). Instrument and MIDI tracks only.
 - **Instrument...**: choose the instrument plug-in. Instrument tracks only.
+- **MIDI To...** and **Add MIDI Plug-in...**: MIDI tracks only.
 - **Monitor**: Auto, On or Off.
-- **Output**: Master, or a bus. Not available on Master.
+- **Output**: Master, or a bus. Not available on Master or MIDI tracks.
 - **Channel Presets...**
 - **Multi-Out: Create Outputs + Sum Folder**: instrument tracks whose instrument has more than one stereo output. See [Mixer and routing](#mixer-and-routing).
-- **Bounce Track** and **Remove Track**. Not available on Master.
+- **Bounce Track** and **Remove Track**. Not available on Master (and no Bounce on MIDI tracks).
 
 ## Recording a first loop
 
@@ -120,6 +140,7 @@ Once a loop has been recorded, an audio track in Auto monitor mutes its live inp
 - **Cmd-click**: open the MIDI editor for a MIDI loop. On an audio loop it does nothing.
 - **Double-click**: no special action. The first click of a double-click has already triggered the loop.
 - **Right-click**: open the loop menu.
+- **Option-drag**: move the loop to another track's column, or to another row of its own column. A bar shows where it will land. Hold **Cmd** as well when you let go to copy it instead. MIDI loops go to Instrument and MIDI tracks, audio loops to audio tracks; other columns don't accept them. A moved loop keeps playing, and its timeline clips move with it. Pressing with Option never triggers the loop.
 
 **Right-click menu:**
 
@@ -134,6 +155,7 @@ Once a loop has been recorded, an audio track in Auto monitor mutes its live inp
 - **Takes**: select a take, or delete one.
 - **Colour** and **Rename...**
 - **Duplicate**: MIDI loops only.
+- **Copy Loop** and **Paste Loop**: copy a loop, then paste it after another loop (or right-click a column's **+** to paste it at the end of that track). Same rule as dragging: MIDI on Instrument / MIDI tracks, audio on audio tracks.
 - **Add to Timeline at Playhead**
 - **Edit MIDI**: MIDI loops only.
 - **Edit Automation**

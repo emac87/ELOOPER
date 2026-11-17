@@ -280,6 +280,10 @@ void AudioEngine::processCommands (const BlockTime& t) {
                     if (auto* n = findNode (*g, c.trackId))
                         for (auto* l : n->loops) { LoopCommand s { LoopCommandType::StopNow }; l->command (s, t, loopCtx); }
                 break;
+            case EngineCommandType::FlushNotes:
+                if (g != nullptr)
+                    if (auto* n = findNode (*g, c.trackId)) n->flushNotes = true;
+                break;
             case EngineCommandType::AllLoopsStop:
                 if (g != nullptr)
                     for (auto& [id, l] : g->loopIndex) { (void) id; LoopCommand s { LoopCommandType::Stop }; l->command (s, t, loopCtx); }
@@ -439,6 +443,7 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
     TrackRt& rt = *n.rt;
     n.output.clear (0, ns);
     if (rt.bounced.load (std::memory_order_relaxed)) {
+        n.routedMidi.clear();
         rt.peakL.store (0); rt.peakR.store (0);
         return;   // bounced away: silent, plugins not processed (suspended)
     }
@@ -466,12 +471,16 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
     const float g0 = n.smoothInGain; smoothTowards (n.smoothInGain, inGainTarget, ns);
 
     // ---- source signal -------------------------------------------------------------------
-    if (n.kind == TrackKind::Instrument) {
-        // Live MIDI for this track (device + channel filter).
+    if (n.kind == TrackKind::Instrument || n.kind == TrackKind::Midi) {
+        // Live MIDI for this track (device + channel filter). Tracks listening to all devices
+        // only hear live MIDI while they are the focus track (input follows the selection).
         loopMidiScratch.clear();
         BlockMidi& filtered = trackMidiScratch;
         filtered.clear();
-        for (int d = 0; d < 8; ++d) {
+        const Id focus = midiFocus.load (std::memory_order_relaxed);
+        const bool liveAllowed = n.midiDeviceIndex >= 0 || ! midiFollow.load (std::memory_order_relaxed)
+                                 || focus == kInvalidId || focus == n.id;
+        for (int d = 0; d < (liveAllowed ? 8 : 0); ++d) {
             if (n.midiDeviceIndex >= 0 && d != n.midiDeviceIndex) continue;
             for (int i = 0; i < liveMidi[d].count; ++i) {
                 const auto& e = liveMidi[d].events[i];
@@ -507,7 +516,23 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
             }
         }
 
+        // MIDI played into this track by MIDI tracks (e.g. a DrumBridge track): always heard.
+        if (! n.routedMidi.isEmpty()) {
+            for (const auto meta : n.routedMidi) n.midi.addEvent (meta.data, meta.numBytes, std::clamp (meta.samplePosition, 0, ns - 1));
+            n.routedMidi.clear();
+        }
+
         runPlugins (n.midiFx, n.work, n.midi, ns);
+        if (n.kind == TrackKind::Midi) {
+            // No sound of its own: hand the processed MIDI to the target track (processed after us).
+            if (n.midiTargetIndex >= 0 && n.midiTargetIndex < (int) g.nodes.size())
+                for (const auto meta : n.midi)
+                    g.nodes[(size_t) n.midiTargetIndex].routedMidi.addEvent (meta.data, meta.numBytes, std::clamp (meta.samplePosition, 0, ns - 1));
+            n.work.clear (0, ns);
+            rt.peakL.store (0); rt.peakR.store (0);
+            meterStore (rt.inputPeak, n.midi.isEmpty() ? 0.0f : 1.0f);
+            return;
+        }
         if (n.hasInstrument && n.instrument.proc != nullptr && ! n.instrument.slot->bypassed.load (std::memory_order_relaxed)) {
             n.work.clear (0, ns);
             const int chans = std::min (n.work.getNumChannels(), std::max (n.instrument.numIn, n.instrument.numOut));

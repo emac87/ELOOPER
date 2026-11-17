@@ -47,6 +47,7 @@ private:
     juce::String nameText, line1;
     int numOuts = 0;
     bool folderOpen = true;
+    bool keysHere = false;   // this track gets the live MIDI keyboard (input follows selection)
     juce::Rectangle<int> folderR;
     TrackControls controls;
     bool dragging = false;

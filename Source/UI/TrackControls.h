@@ -4,6 +4,7 @@
 // instrument picker), Mute / Solo / Record arm, the monitor button (Auto / On / Off) and
 // Pre FX / Post FX buttons (each opens that chain's plug-ins; empty: the plug-in picker), and the
 // In (input gain) and Pan bars under them, then (instrument tracks only) a MIDI FX button.
+// MIDI tracks have no audio: their label shows MIDI To (which track plays their MIDI) and MIDI FX instead.
 // The rest of the channel (instrument, sends, Vol, output) is on the mixer.
 #include <JuceHeader.h>
 #include "Engine/EngineController.h"
@@ -26,6 +27,7 @@ public:
     void layout (juce::Rectangle<int> icon, juce::Rectangle<int> msr, juce::Rectangle<int> monitor, juce::Rectangle<int> fx,
                  juce::Rectangle<int> inBar, juce::Rectangle<int> panBar, juce::Rectangle<int> midiFx = {});
     bool hasMidiFx() const noexcept { return midi != nullptr; }
+    bool isMidiTrack() const noexcept { return midiTo != nullptr; }
     void refresh();                               // names / plug-in counts changed
     void poll();                                  // states (cheap; call a few times a second)
     void pollValues();                            // In / Pan bars (every UI tick, so automation moves smoothly)
@@ -33,12 +35,14 @@ public:
     class Buttons;
     class ChainButton;
     class MonitorButton;
+    class MidiToButton;
 
 private:
     std::unique_ptr<PluginIconButton> icon;
     std::unique_ptr<Buttons> buttons;
     std::unique_ptr<ChainButton> pre, post, midi;   // midi: instrument tracks only
     std::unique_ptr<MonitorButton> monitor;
+    std::unique_ptr<MidiToButton> midiTo;            // MIDI tracks only: where their MIDI goes
     std::unique_ptr<ValueBar> gainBar, panBar;
     bool hasMonitor = false;
 };

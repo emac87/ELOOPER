@@ -7,6 +7,8 @@
 
 namespace el {
 
+// MIDI tracks: pick which Instrument / MIDI track plays their MIDI.
+void showMidiToMenu (EngineController&, Id midiTrackId, juce::Component* target);
 void showTrackMenu (EngineController&, PresetManager&, Id trackId, juce::Component* target);
 void renameTrack (EngineController&, Id trackId);
 void confirmBounceTrack (EngineController&, Id trackId);

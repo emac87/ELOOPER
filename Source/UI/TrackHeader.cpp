@@ -37,7 +37,11 @@ void TrackHeader::refresh()
         case TrackKind::AuxOut:     line1 = "Output " + juce::String (t->auxPair * 2 + 1) + "/" + juce::String (t->auxPair * 2 + 2); break;
         case TrackKind::Bus:        line1 = t->folderOf != kInvalidId ? "Sum folder" : "Bus"; break;
         case TrackKind::Master:     line1 = "Master"; break;
+        case TrackKind::Midi:       line1 = ! t->midiFx.empty() && t->midiFx.front() != nullptr ? t->midiFx.front()->name() : juce::String ("No MIDI plug-in"); break;
     }
+    // Live MIDI follows the selection: mark the track the keyboard plays.
+    keysHere = t->isMidiLike() && controller.midiFollowsSelection() && controller.midiFocusTrack() == trackId
+               && t->midiInputDevice.isEmpty();
     controls.refresh();
     resized();
     repaint();
@@ -80,7 +84,15 @@ void TrackHeader::paint (juce::Graphics& g)
     g.drawFittedText (nameText, 33, 8, w - 37, 28, juce::Justification::centredLeft, 2, 0.8f);
     g.setColour (theme::textDim);
     g.setFont (theme::font (11.0f));
-    g.drawFittedText (line1, 6, 38, w - 10, 15, juce::Justification::centredLeft, 1, 0.8f);
+    g.drawFittedText (line1, 6, 38, w - (keysHere ? 30 : 10), 15, juce::Justification::centredLeft, 1, 0.8f);
+    if (keysHere) {   // a small keyboard: live MIDI plays this track
+        juce::Rectangle<float> k ((float) w - 25.0f, 39.0f, 19.0f, 12.0f);
+        g.setColour (theme::accent);
+        g.fillRoundedRectangle (k, 2.0f);
+        g.setColour (theme::panel);
+        for (int i = 1; i < 4; ++i) g.fillRect (k.getX() + k.getWidth() * (float) i / 4.0f - 0.5f, k.getY() + 1.0f, 1.0f, k.getHeight() - 2.0f);
+        for (int i : { 1, 2 }) g.fillRect (k.getX() + k.getWidth() * (float) i / 4.0f - 2.0f, k.getY(), 4.0f, k.getHeight() * 0.55f);
+    }
 
     if (! folderR.isEmpty()) {
         auto r = folderR.toFloat();

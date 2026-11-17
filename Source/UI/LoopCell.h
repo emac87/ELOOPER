@@ -9,6 +9,12 @@
 
 namespace el {
 
+// Loop page clipboard (right-click Copy Loop / Paste Loop) and the drag description prefix.
+namespace loopclip {
+    inline Id copied = kInvalidId;
+    inline const juce::String dragPrefix { "elooper-loop:" };
+}
+
 class LoopCell : public juce::Component {
 public:
     LoopCell (EngineController&, Selection&, MidiMapping&, Id trackId, Id loopId);
@@ -26,6 +32,8 @@ public:
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
 
 private:
     void showMenu();
@@ -44,6 +52,7 @@ private:
     int ringStep = 0;
     bool blink = false;
     bool selected = false;
+    bool dragArmed = false, dragStarted = false;   // Option-drag moves the loop to another track
     float ringCy = 54.0f, ringR = 30.0f, ringT = 5.0f;   // set in resized()
 
     juce::Path glyph;           // large type glyph (built in resized)

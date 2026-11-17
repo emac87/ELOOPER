@@ -28,6 +28,8 @@ struct TrackNode {
     juce::String midiDevice; int midiDeviceIndex = -1; int midiChannel = 0;
     int recordSourceIndex = -1;           // resample source node (bounce)
     int auxParentIndex = -1; int auxPair = 0;
+    int midiTargetIndex = -1;             // MIDI tracks: node whose instrument plays our MIDI output
+    juce::MidiBuffer routedMidi;           // MIDI sent to this node by MIDI tracks this block
     std::vector<PluginNode> midiFx, pre, post;
     PluginNode instrument; bool hasInstrument = false;
     std::vector<LoopRt*> loops;
@@ -81,6 +83,7 @@ enum class EngineCommandType : uint8_t {
     Locate,           // beat
     Bounce,           // trackId = source; loop = new loop on new track (beat = target track id): resample one cycle
     StopTrackLoops,   // trackId: stop every loop on a track now
+    FlushNotes,       // trackId: all-notes-off to its instrument once (MIDI moved away from it)
     AllLoopsStop
 };
 
@@ -134,6 +137,9 @@ public:
     void setTransportSettings (const TransportSettings& t);   // tempo is set via clock()
     void setMidiInputDevices (const juce::StringArray& identifiers);  // index = TrackNode::midiDeviceIndex
     void setRecordLatencyOffset (int samples) noexcept { latencyOffset.store (samples); }
+    // Live MIDI follows the selected track: tracks listening to "all devices" only get live MIDI
+    // while they are the focus track (the last selected Instrument / MIDI track).
+    void setMidiFocus (Id trackId, bool followSelection) noexcept { midiFocus.store (trackId); midiFollow.store (followSelection); }
 
     double sampleRate() const noexcept { return currentRate.load(); }
     int blockSize() const noexcept { return currentBlock.load(); }
@@ -198,6 +204,8 @@ private:
     std::atomic<int> currentBlock { 512 };
     std::atomic<int> latIn { 0 }, latOut { 0 }, latencyOffset { 0 };
     std::atomic<double> pendingLocate { -1 };
+    std::atomic<Id> midiFocus { kInvalidId };
+    std::atomic<bool> midiFollow { true };
 
     bool wasPlaying = false;
     int64_t sampleClock = 0;

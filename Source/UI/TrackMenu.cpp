@@ -167,6 +167,31 @@ void confirmRemoveTrack (EngineController& controller, Id trackId)
                  [c, id] { c->removeTrack (id); });
 }
 
+void showMidiToMenu (EngineController& controller, Id trackId, juce::Component* target)
+{
+    auto t = controller.session().findTrack (trackId);
+    if (t == nullptr || t->kind != TrackKind::Midi) return;
+    ActionMenu am; juce::PopupMenu m;
+    auto* c = &controller; const Id id = trackId;
+    m.addSectionHeader ("Play this track's MIDI on");
+    int n = 0;
+    for (auto& o : controller.session().tracks) {
+        if (o->id == trackId || ! o->isMidiLike() || o->bounced) continue;
+        const Id dest = o->id;
+        juce::String label = o->name;
+        if (o->kind == TrackKind::Instrument) label << "  (" << (o->instrument != nullptr ? o->instrument->name() : juce::String ("no instrument")) << ")";
+        else label << "  (MIDI track)";
+        am.add (m, label, [c, id, dest] {
+            if (! c->setMidiTarget (id, dest)) ui::alert ("MIDI To", "That would send the MIDI round in a loop.");
+        }, t->midiTarget == dest, true, o->colour);
+        ++n;
+    }
+    if (n == 0) am.add (m, "(no instrument tracks yet)", {}, false, false);
+    m.addSeparator();
+    am.add (m, "None", [c, id] { c->setMidiTarget (id, kInvalidId); }, t->midiTarget == kInvalidId);
+    am.show (m, target);
+}
+
 void showTrackMenu (EngineController& controller, PresetManager& presets, Id trackId, juce::Component* target)
 {
     auto t = controller.session().findTrack (trackId);
@@ -201,11 +226,12 @@ void showTrackMenu (EngineController& controller, PresetManager& presets, Id tra
         m.addSubMenu ("Input", in);
     }
 
-    if (t->kind == TrackKind::Instrument) {
+    if (t->isMidiLike()) {
         juce::PopupMenu mi;
         const auto dev = t->midiInputDevice;
         const int ch = t->midiChannel;
-        am.add (mi, "All Devices", [c, id, ch] { c->setTrackMidiInput (id, {}, ch); }, dev.isEmpty());
+        am.add (mi, controller.midiFollowsSelection() ? "All Devices (when this track is selected)" : "All Devices",
+                [c, id, ch] { c->setTrackMidiInput (id, {}, ch); }, dev.isEmpty());
         for (auto& d : juce::MidiInput::getAvailableDevices())
             am.add (mi, d.name, [c, id, ch, ident = d.identifier] { c->setTrackMidiInput (id, ident, ch); }, dev == d.identifier);
         mi.addSeparator();
@@ -216,12 +242,20 @@ void showTrackMenu (EngineController& controller, PresetManager& presets, Id tra
         mi.addSubMenu ("Channel", chm);
         m.addSubMenu ("MIDI Input", mi);
 
-        am.add (m, "Instrument...", [self, c, id] {
-            showPluginMenu (*c, id, FxChain::Instrument, 0, self.getComponent());
+        if (t->kind == TrackKind::Instrument)
+            am.add (m, "Instrument...", [self, c, id] {
+                showPluginMenu (*c, id, FxChain::Instrument, 0, self.getComponent());
+            });
+    }
+
+    if (t->kind == TrackKind::Midi) {
+        am.add (m, "MIDI To...", [self, c, id] { if (self != nullptr) showMidiToMenu (*c, id, self.getComponent()); });
+        am.add (m, "Add MIDI Plug-in...", [self, c, id] {
+            showPluginMenu (*c, id, FxChain::MidiFx, -1, self.getComponent());
         });
     }
 
-    if (t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument) {
+    if (t->kind == TrackKind::Audio || t->isMidiLike()) {
         juce::PopupMenu mon;
         const MonitorMode modes[] = { MonitorMode::Auto, MonitorMode::On, MonitorMode::Off };
         const auto cur = t->rt != nullptr ? t->rt->monitor.load() : MonitorMode::Auto;
@@ -230,7 +264,7 @@ void showTrackMenu (EngineController& controller, PresetManager& presets, Id tra
         m.addSubMenu ("Monitor", mon);
     }
 
-    if (t->kind != TrackKind::Master) {
+    if (t->kind != TrackKind::Master && t->kind != TrackKind::Midi) {   // MIDI tracks make no audio
         juce::PopupMenu out;
         am.add (out, "Master", [id, c] {
             if (! c->setTrackOutput (id, kMasterId)) ui::alert ("Output", "That output is not possible.");
@@ -257,7 +291,7 @@ void showTrackMenu (EngineController& controller, PresetManager& presets, Id tra
 
     m.addSeparator();
     if (t->kind != TrackKind::Master) {
-        am.add (m, "Bounce Track", [c, id] { confirmBounceTrack (*c, id); });
+        if (t->kind != TrackKind::Midi) am.add (m, "Bounce Track", [c, id] { confirmBounceTrack (*c, id); });
         am.add (m, "Remove Track", [c, id] { confirmRemoveTrack (*c, id); });
     }
     am.show (m, target);

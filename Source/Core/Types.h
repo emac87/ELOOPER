@@ -14,7 +14,8 @@ enum class TrackKind : uint8_t {
     Instrument,  // MIDI in -> (MIDI FX) -> software instrument
     Bus,         // fed by sends / track outputs; may record (resample) loops
     Master,      // final mix, feeds hardware outputs
-    AuxOut       // extra stereo output pair of a multi-out instrument plugin
+    AuxOut,      // extra stereo output pair of a multi-out instrument plugin
+    Midi         // MIDI in -> MIDI plug-ins (e.g. DrumBridge) -> MIDI out to another track (midiTarget); no audio
 };
 
 enum class LoopType : uint8_t { Audio, Midi, Automation };

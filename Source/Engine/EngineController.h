@@ -104,6 +104,16 @@ public:
     int  addSend (Id trackId, Id busId, bool preFader = false);   // returns send index or -1 (cycle/full)
     void removeSend (Id trackId, int sendIndex);
     void setSendPreFader (Id trackId, int sendIndex, bool pre);
+    // MIDI tracks: which Instrument (or MIDI) track plays their MIDI output. kInvalidId = none.
+    // False if the target can't take MIDI or it would make a loop.
+    bool setMidiTarget (Id midiTrackId, Id targetTrackId);
+
+    // Live MIDI follows the selection: the last selected Instrument / MIDI track gets the keyboard
+    // (tracks set to one particular MIDI device keep listening to it). Call on every selection change.
+    void setSelectedTrack (Id trackId);
+    void setMidiFollowsSelection (bool on);
+    bool midiFollowsSelection() const noexcept { return midiFollow; }
+    Id midiFocusTrack() const noexcept { return midiFocus; }
 
     // Mixer & any other automatable parameter (normalised 0..1, see Core/ParamMapping.h).
     void  setParam (Id trackId, const ParamTarget& p, float normalised);
@@ -176,6 +186,11 @@ public:
     int numScenes() const;
     void launchScene (int index);
     void duplicateLoop (Id loopId);                  // MIDI/automation: copy content to a new loop
+    // Moving / copying loops between tracks: MIDI loops go to Instrument and MIDI tracks, audio
+    // loops to Audio tracks (and buses). index = position among the target track's loops (-1 = end).
+    static bool canHoldLoop (const TrackModel& t, LoopType type) noexcept;
+    bool moveLoop (Id loopId, Id targetTrackId, int index = -1);
+    Id copyLoop (Id loopId, Id targetTrackId, int index = -1);   // returns the new loop, or kInvalidId
 
     LoopStatus loopStatus (Id loopId) const;         // cheap; call from timers
 
@@ -246,6 +261,10 @@ private:
     std::unique_ptr<AudioEngine> audioEngine;
     juce::ListenerList<Listener> listeners;
     bool arrangementRecord = false;
+    bool midiFollow = true;
+    Id midiFocus = kInvalidId;
+    void publishMidiFocus();
+    void insertLoopAt (TrackModel& t, LoopPtr l, int index);
     double preparedRate = 0; int preparedBlock = 0;   // what plugins were last prepared with
     void notify (Change c, Id id = kInvalidId);
 

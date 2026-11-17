@@ -48,9 +48,9 @@ public:
 };
 
 // ---- one track column: its loops (top-down) and "+" (only loops here; the controls are on the label) ---
-class LoopGrid::Column : public juce::Component {
+class LoopGrid::Column : public juce::Component, public juce::DragAndDropTarget {
 public:
-    Column (LoopGrid& g, const TrackPtr& track) : trackId (track->id), grid (g), isInstrument (track->kind == TrackKind::Instrument)
+    Column (LoopGrid& g, const TrackPtr& track) : trackId (track->id), grid (g), isMidi (track->isMidiLike())
     {
         for (auto& l : track->loops) {
             if (! EngineController::isSceneLoop (*l)) continue;   // automation loops are hidden for now
@@ -59,11 +59,12 @@ public:
             addAndMakeVisible (c);
         }
         plus.setButtonText ("+");
-        plus.setTooltip (isInstrument ? "Add a MIDI loop" : "Add an audio loop");
+        plus.setTooltip (juce::String (isMidi ? "Add a MIDI loop" : "Add an audio loop") + " (right-click: paste a copied loop)");
         plus.setColour (juce::TextButton::buttonColourId, theme::panel);
         plus.setColour (juce::TextButton::textColourOffId, theme::accent);
-        plus.onClick = [this] {
-            const Id id = grid.controller.addLoop (trackId, isInstrument ? LoopType::Midi : LoopType::Audio);
+        plus.onAnyClick = [this] (bool popup) {
+            if (popup) { showPasteMenu(); return; }
+            const Id id = grid.controller.addLoop (trackId, isMidi ? LoopType::Midi : LoopType::Audio);
             if (id != kInvalidId) grid.selection.select (trackId, id);
         };
         addAndMakeVisible (plus);
@@ -82,13 +83,71 @@ public:
     void refreshAll() { for (auto* c : cells) c->refresh(); }
     void poll (bool blink) { for (auto* c : cells) c->poll (blink); }
 
+    // ---- loops dragged in from any column (Option-drag; Option+Cmd at the drop copies) ----
+    static Id draggedLoop (const SourceDetails& d)
+    {
+        const auto s = d.description.toString();
+        return s.startsWith (loopclip::dragPrefix) ? (Id) s.fromFirstOccurrenceOf (loopclip::dragPrefix, false, false).getLargeIntValue() : kInvalidId;
+    }
+    bool isInterestedInDragSource (const SourceDetails& d) override
+    {
+        auto l = grid.controller.session().findLoop (draggedLoop (d));
+        auto t = grid.controller.session().findTrack (trackId);
+        return l != nullptr && t != nullptr && EngineController::canHoldLoop (*t, l->type);
+    }
+    int indexAt (int y) const { return juce::jlimit (0, cells.size(), (y + rowStep / 2) / rowStep); }
+    void itemDragEnter (const SourceDetails& d) override { itemDragMove (d); }
+    void itemDragMove (const SourceDetails& d) override
+    {
+        const int i = indexAt (d.localPosition.y);
+        if (i != dropIndex) { dropIndex = i; repaint(); }
+    }
+    void itemDragExit (const SourceDetails&) override { dropIndex = -1; repaint(); }
+    void itemDropped (const SourceDetails& d) override
+    {
+        const Id loop = draggedLoop (d);
+        const int index = indexAt (d.localPosition.y);
+        const bool copy = juce::ModifierKeys::currentModifiers.isCommandDown();
+        dropIndex = -1;
+        auto* c = &grid.controller; auto* sel = &grid.selection; const Id tid = trackId;
+        // Deferred: the change rebuilds the page, which deletes this column (and the dragged cell).
+        juce::MessageManager::callAsync ([c, sel, loop, tid, index, copy] {
+            if (copy) { const Id n = c->copyLoop (loop, tid, index); if (n != kInvalidId) sel->select (tid, n); }
+            else if (c->moveLoop (loop, tid, index)) sel->select (tid, loop);
+        });
+    }
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        if (dropIndex < 0) return;
+        const int y = juce::jmin (dropIndex * rowStep, getHeight() - 3) - (dropIndex > 0 ? 3 : 0);
+        g.setColour (theme::accent);
+        g.fillRoundedRectangle (2.0f, (float) juce::jmax (0, y), (float) getWidth() - 4.0f, 4.0f, 2.0f);
+    }
+
     const Id trackId;
 
 private:
+    void showPasteMenu()
+    {
+        auto src = grid.controller.session().findLoop (loopclip::copied);
+        auto t = grid.controller.session().findTrack (trackId);
+        ActionMenu am; juce::PopupMenu m;
+        auto* c = &grid.controller; const Id tid = trackId;
+        const bool ok = src != nullptr && t != nullptr && EngineController::canHoldLoop (*t, src->type);
+        am.add (m, src != nullptr ? "Paste Loop (" + src->name + ")" : juce::String ("Paste Loop (copy one first: right-click a loop)"),
+                [c, tid] { c->copyLoop (loopclip::copied, tid, -1); }, false, ok);
+        am.show (m, &plus);
+    }
+
+    struct PlusButton : public juce::TextButton {
+        std::function<void (bool popup)> onAnyClick;
+        void clicked (const juce::ModifierKeys& m) override { if (onAnyClick) onAnyClick (m.isPopupMenu()); }
+    };
     LoopGrid& grid;
-    const bool isInstrument;
+    const bool isMidi;
     juce::OwnedArray<LoopCell> cells;
-    juce::TextButton plus;
+    PlusButton plus;
+    int dropIndex = -1;
 };
 
 // ---- the scene buttons down the left side, one per loop row --------------------------------------
@@ -379,6 +438,12 @@ void LoopGrid::showAddTrackMenu()
     am.add (m, "Add Instrument Track", [c, target] {
         const Id id = c->addTrack (TrackKind::Instrument);
         if (id != kInvalidId) showPluginMenu (*c, id, FxChain::Instrument, 0, target.getComponent());
+    });
+    am.add (m, "Add MIDI Track (DrumBridge, arps... played on another track)", [c, target, sel = &selection] {
+        const Id id = c->addTrack (TrackKind::Midi);
+        if (id == kInvalidId) return;
+        sel->select (id);
+        showPluginMenu (*c, id, FxChain::MidiFx, -1, target.getComponent());
     });
     am.add (m, "Add Bus (shown on the mixer)", [c] { c->addTrack (TrackKind::Bus); });
     am.show (m, &addTrackButton);

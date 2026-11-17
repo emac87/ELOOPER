@@ -72,6 +72,7 @@ ChannelStrip::ChannelStrip (EngineController& c, PresetManager& p, Id id)
     outputSlot = std::make_unique<MenuSlot>();
     outputSlot->onClick = [this] (juce::Component* c2) {
         if (isMaster) showHardwareOutputMenu (c2);
+        else if (kind == TrackKind::Midi) showMidiToMenu (controller, trackId, c2);
         else showOutputPicker (controller, trackId, c2);
     };
     addAndMakeVisible (*outputSlot);
@@ -123,8 +124,19 @@ void ChannelStrip::updateHeader (const TrackModel& t)
     }
     else if (t.kind == TrackKind::AuxOut) line1 = "Output " + juce::String (t.auxPair * 2 + 1) + "/" + juce::String (t.auxPair * 2 + 2);
     else if (t.kind == TrackKind::Bus) line1 = t.folderOf != kInvalidId ? "Sum folder" : "Bus";
+    else if (t.kind == TrackKind::Midi) line1 = "MIDI track";
     else line1 = "Master";
 
+    if (t.kind == TrackKind::Midi) {
+        auto d = controller.session().findTrack (t.midiTarget);
+        outputSlot->setText (d != nullptr ? juce::String (juce::CharPointer_UTF8 ("To \xe2\x96\xb8 ")) + d->name : juce::String ("MIDI To: none"));
+        outputSlot->setTooltip ("MIDI To: the track that plays this track's MIDI");
+        fader->setVisible (false);
+        icon->refresh();
+        repaint();
+        return;
+    }
+    fader->setVisible (true);
     if (isMaster) outputSlot->setText ("Out " + juce::String (t.hardwareOutput + 1) + "-" + juce::String (t.hardwareOutput + 2));
     else if (auto out = controller.session().findTrack (t.outputBus); out && out->kind != TrackKind::Master) outputSlot->setText (out->name);
     else outputSlot->setText ("Stereo Out");
@@ -186,9 +198,10 @@ void ChannelStrip::buildContent (const TrackModel& t)
         }
         if (! loopPageTrack) chain ("MIDI FX", FxChain::MidiFx, t.midiFx, "+ MIDI FX");   // else: on the track label
     }
-    if (! loopPageTrack) chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");
+    if (t.kind == TrackKind::Midi && ! loopPageTrack) chain ("MIDI FX", FxChain::MidiFx, t.midiFx, "+ MIDI FX");
+    if (! loopPageTrack && t.kind != TrackKind::Midi) chain ("Audio FX", FxChain::Pre, t.preFx, "+ Audio FX");
 
-    if (! isMaster) {
+    if (! isMaster && t.kind != TrackKind::Midi) {   // MIDI tracks make no audio: no sends
         title ("Sends");
         for (int i = 0; i < (int) t.sends.size(); ++i) {
             const auto& sp = t.sends[(size_t) i];
@@ -210,7 +223,7 @@ void ChannelStrip::buildContent (const TrackModel& t)
         empty ("+ Send", "Send to a bus (or make a new one)", [this] (juce::Component* c) { showSendPicker (controller, trackId, c); });
         y += 3;
     }
-    if (! loopPageTrack) chain ("Post FX", FxChain::Post, t.postFx, "+ Post FX");
+    if (! loopPageTrack && t.kind != TrackKind::Midi) chain ("Post FX", FxChain::Post, t.postFx, "+ Post FX");
 
     content.setSize (theme::stripWidth - 6, y + 2);
     viewport.setViewPosition (0, scrollPos);
@@ -221,7 +234,7 @@ void ChannelStrip::resized()
 {
     const int W = getWidth(), H = getHeight();
     icon->setBounds (kM, 8, 26, 26);
-    const bool full = kind == TrackKind::Audio || kind == TrackKind::Instrument;
+    const bool full = kind == TrackKind::Audio || kind == TrackKind::Instrument || kind == TrackKind::Midi;
     const int bw = W - 2 * kM;
     if (isMaster) {
         muteR = { kM, kButtonsY, bw, kButtonsH };
@@ -249,7 +262,7 @@ void ChannelStrip::resized()
     const int faderH = juce::jlimit (80, 220, (int) ((H - topH) * 0.36f));
     const int meterW = 14;
     fader->setBounds (kM, bottom - faderH, bw - meterW - 4, faderH);
-    meterR = { W - kM - meterW, bottom - faderH, meterW, faderH };
+    meterR = kind == TrackKind::Midi ? juce::Rectangle<int>() : juce::Rectangle<int> { W - kM - meterW, bottom - faderH, meterW, faderH };
     bottom -= faderH + 5;
     // A loop-page track has In and Pan on its loop-page label instead.
     panBar->setVisible (! loopPageTrack);

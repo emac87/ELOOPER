@@ -2,6 +2,7 @@
 #include "UI/StripWidgets.h"
 #include "UI/PluginBrowser.h"
 #include "UI/TrackMenu.h"
+#include "UI/ColourPicker.h"
 #include "UI/Theme.h"
 #include "UI/ValueBar.h"
 #include "Core/ParamMapping.h"
@@ -14,7 +15,7 @@ public:
     Buttons (EngineController& c, Selection& s, Id id) : controller (c), selection (s), trackId (id)
     {
         auto t = controller.session().findTrack (trackId);
-        hasArm = t != nullptr && (t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument);
+        hasArm = t != nullptr && (t->kind == TrackKind::Audio || t->isMidiLike());
         setTooltip (hasArm ? "Mute / Solo / Record arm" : "Mute / Solo");
     }
 
@@ -130,7 +131,7 @@ public:
         count = (int) list.size();
         colour = t->colour;
         juce::String tip = chain == FxChain::Pre ? "Pre FX (before the fader)" : chain == FxChain::Post ? "Post FX (after the fader)"
-                                                 : "MIDI FX (before the instrument)";
+                                                 : t->kind == TrackKind::Midi ? "MIDI FX (their MIDI goes to the MIDI To track)" : "MIDI FX (before the instrument)";
         if (count == 0) tip << ": empty, click to add a plug-in";
         else {
             tip << ":";
@@ -232,24 +233,68 @@ private:
     bool known = false;
 };
 
+// ---- MIDI To (MIDI tracks): the track whose instrument plays this track's MIDI ---------------------
+class TrackControls::MidiToButton : public juce::Component, public juce::SettableTooltipClient {
+public:
+    MidiToButton (EngineController& c, Selection& s, Id id) : controller (c), selection (s), trackId (id)
+    {
+        setRepaintsOnMouseActivity (true);
+        setTooltip ("MIDI To: the track that plays this track's MIDI (click to choose)");
+        refresh();
+    }
+    void refresh()
+    {
+        auto t = controller.session().findTrack (trackId);
+        auto d = t != nullptr ? controller.session().findTrack (t->midiTarget) : nullptr;
+        targetName = d != nullptr ? d->name : juce::String();
+        targetColour = d != nullptr ? d->colour : theme::outline;
+        repaint();
+    }
+    void paint (juce::Graphics& g) override
+    {
+        auto b = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (isMouseOver() ? theme::outline : theme::panelRaised);
+        g.fillRoundedRectangle (b, 4.0f);
+        g.setColour (targetName.isNotEmpty() ? targetColour.withAlpha (0.8f) : theme::outline);
+        g.drawRoundedRectangle (b, 4.0f, 1.0f);
+        g.setColour (targetName.isNotEmpty() ? theme::text : theme::textDim);
+        g.setFont (theme::font (11.0f, targetName.isNotEmpty()));
+        g.drawFittedText (targetName.isNotEmpty() ? juce::String (juce::CharPointer_UTF8 ("To \xe2\x96\xb8 ")) + targetName : juce::String ("MIDI To: none"),
+                          getLocalBounds().reduced (3, 0), juce::Justification::centred, 1, 0.7f);
+    }
+    void mouseDown (const juce::MouseEvent&) override
+    {
+        selection.select (trackId);
+        showMidiToMenu (controller, trackId, this);
+    }
+private:
+    EngineController& controller;
+    Selection& selection;
+    const Id trackId;
+    juce::String targetName;
+    juce::Colour targetColour;
+};
+
 // ---- the set -----------------------------------------------------------------------------------------
 TrackControls::TrackControls (EngineController& c, Selection& s, PresetManager& p, Id trackId)
 {
     icon = std::make_unique<PluginIconButton> (c, trackId);
     auto* sel = &s;
     icon->onPressed = [sel, trackId] { sel->select (trackId); };
-    if (auto t = c.session().findTrack (trackId); t != nullptr && t->kind == TrackKind::Instrument) {
+    if (auto t = c.session().findTrack (trackId); t != nullptr && t->isMidiLike()) {
         auto* ctl = &c;
         juce::Component::SafePointer<PluginIconButton> btn (icon.get());
-        icon->onEmptyClick = [ctl, trackId, btn] { if (btn != nullptr) showPluginMenu (*ctl, trackId, FxChain::Instrument, -1, btn.getComponent()); };
+        const auto chain = t->kind == TrackKind::Midi ? FxChain::MidiFx : FxChain::Instrument;   // MIDI track: DrumBridge, arps...
+        icon->onEmptyClick = [ctl, trackId, btn, chain] { if (btn != nullptr) showPluginMenu (*ctl, trackId, chain, -1, btn.getComponent()); };
     }
     buttons = std::make_unique<Buttons> (c, s, trackId);
     pre = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::Pre);
     post = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::Post);
     monitor = std::make_unique<MonitorButton> (c, s, trackId);
     if (auto t = c.session().findTrack (trackId)) {
-        hasMonitor = t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument;
-        if (t->kind == TrackKind::Instrument) midi = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::MidiFx);
+        hasMonitor = t->kind == TrackKind::Audio || t->isMidiLike();
+        if (t->isMidiLike()) midi = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::MidiFx);
+        if (t->kind == TrackKind::Midi) midiTo = std::make_unique<MidiToButton> (c, s, trackId);
     }
 
     gainBar = std::make_unique<ValueBar>();
@@ -272,10 +317,11 @@ void TrackControls::addTo (juce::Component& parent)
 {
     parent.addAndMakeVisible (*icon);
     parent.addAndMakeVisible (*buttons);
-    parent.addAndMakeVisible (*pre);
-    parent.addAndMakeVisible (*post);
     if (hasMonitor) parent.addAndMakeVisible (*monitor);
     if (midi) parent.addAndMakeVisible (*midi);
+    if (midiTo) { parent.addAndMakeVisible (*midiTo); return; }   // no audio: no FX, In or Pan
+    parent.addAndMakeVisible (*pre);
+    parent.addAndMakeVisible (*post);
     parent.addAndMakeVisible (*gainBar);
     parent.addAndMakeVisible (*panBar);
 }
@@ -283,7 +329,10 @@ void TrackControls::addTo (juce::Component& parent)
 void TrackControls::layout (juce::Rectangle<int> iconR, juce::Rectangle<int> msr, juce::Rectangle<int> monR, juce::Rectangle<int> fx,
                             juce::Rectangle<int> inR, juce::Rectangle<int> panR, juce::Rectangle<int> midiR)
 {
-    if (midi) midi->setBounds (midiR);
+    if (midiTo) {   // MIDI track: MIDI To where Pre / Post FX would be, MIDI FX under it
+        midiTo->setBounds (fx);
+        if (midi) midi->setBounds (inR);
+    } else if (midi) midi->setBounds (midiR);
     gainBar->setBounds (inR);
     panBar->setBounds (panR);
     icon->setBounds (iconR);
@@ -307,6 +356,7 @@ void TrackControls::refresh()
     pre->refresh();
     post->refresh();
     if (midi) midi->refresh();
+    if (midiTo) midiTo->refresh();
 }
 
 void TrackControls::poll()

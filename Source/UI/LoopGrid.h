@@ -33,6 +33,7 @@ namespace looplayout {
 }
 
 class LoopGrid : public juce::Component,
+                 public juce::DragAndDropContainer,   // Option-drag a loop onto another column
                  private juce::Timer,
                  private EngineController::Listener,
                  private juce::ChangeListener {

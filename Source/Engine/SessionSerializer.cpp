@@ -372,6 +372,7 @@ void writeTrack (EngineController& c, juce::XmlElement& parent, const TrackModel
     setId (*e, "outputBus", t.outputBus);
     e->setAttribute ("hardwareOutput", t.hardwareOutput);
     setId (*e, "auxParent", t.auxParent);
+    setId (*e, "midiTarget", t.midiTarget);
     e->setAttribute ("auxPair", t.auxPair);
     setId (*e, "folderOf", t.folderOf);
     e->setAttribute ("folderOpen", t.folderOpen);
@@ -419,7 +420,7 @@ TrackPtr readTrack (const juce::XmlElement& e, const juce::File& audioDir, doubl
 {
     auto t = std::make_shared<TrackModel>();
     t->id = getId (e, "id");
-    t->kind = getEnum (e, "kind", TrackKind::Audio, (int) TrackKind::AuxOut);
+    t->kind = getEnum (e, "kind", TrackKind::Audio, (int) TrackKind::Midi);
     t->name = e.getStringAttribute ("name");
     t->colour = juce::Colour::fromString (e.getStringAttribute ("colour", "ff4fc3f7"));
     t->inputChannel = e.getIntAttribute ("inputChannel", 0);
@@ -430,6 +431,7 @@ TrackPtr readTrack (const juce::XmlElement& e, const juce::File& audioDir, doubl
     t->outputBus = e.hasAttribute ("outputBus") ? getId (e, "outputBus") : kMasterId;
     t->hardwareOutput = e.getIntAttribute ("hardwareOutput", 0);
     t->auxParent = getId (e, "auxParent");
+    t->midiTarget = getId (e, "midiTarget");
     t->auxPair = e.getIntAttribute ("auxPair", 0);
     t->folderOf = getId (e, "folderOf");
     t->folderOpen = e.getBoolAttribute ("folderOpen", true);

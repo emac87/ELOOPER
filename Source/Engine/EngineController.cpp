@@ -111,12 +111,17 @@ static std::vector<RouteEdge> routeEdges (const Session& s, Id skipFrom = kInval
         for (auto& snd : t->sends) e.push_back ({ t->id, snd.busId });
         if (t->auxParent != kInvalidId) e.push_back ({ t->auxParent, t->id });
         if (t->recordSource != kInvalidId) e.push_back ({ t->recordSource, t->id });
+        if (t->midiTarget != kInvalidId) e.push_back ({ t->id, t->midiTarget });   // MIDI flows before the target plays
     }
     return e;
 }
 
 void EngineController::rebuildGraph() {
     auto& s = *sessionPtr;
+    if (midiFocus != kInvalidId) {   // the focus track was removed (or a new session loaded): everyone listens again
+        auto f = s.findTrack (midiFocus);
+        if (! f || ! f->isMidiLike() || f->bounced) { midiFocus = kInvalidId; publishMidiFocus(); }
+    }
     auto g = std::make_unique<RenderGraph>();
     const int block = maxBlock();
     g->maxBlock = block;
@@ -144,6 +149,7 @@ void EngineController::rebuildGraph() {
         n.recordSourceIndex = t->recordSource != kInvalidId && indexOf.count (t->recordSource) ? indexOf[t->recordSource] : -1;
         n.auxParentIndex = t->auxParent != kInvalidId && indexOf.count (t->auxParent) ? indexOf[t->auxParent] : -1;
         n.auxPair = t->auxPair;
+        n.midiTargetIndex = t->kind == TrackKind::Midi && t->midiTarget != kInvalidId && indexOf.count (t->midiTarget) ? indexOf[t->midiTarget] : -1;
 
         int maxCh = 2;
         auto addPlugins = [&] (const std::vector<PluginSlotPtr>& src, std::vector<PluginNode>& dst) {
@@ -175,7 +181,7 @@ void EngineController::rebuildGraph() {
         n.bus.setSize (2, block); n.input.setSize (2, block); n.output.setSize (2, block);
         n.work.setSize (maxCh, block);
         n.bus.clear(); n.input.clear(); n.output.clear(); n.work.clear();
-        n.midi.ensureSize (8192); n.fxMidi.ensureSize (2048);
+        n.midi.ensureSize (8192); n.fxMidi.ensureSize (2048); n.routedMidi.ensureSize (8192);
         n.eq.prepare (g->sampleRate);
 
         // Carry DSP state over from the previous graph so rebuilds are glitch-free.
@@ -311,7 +317,7 @@ TrackPtr EngineController::makeTrack (TrackKind kind, const juce::String& name, 
     t->kind = kind;
     int count = 0;
     for (auto& o : s.tracks) if (o->kind == kind) ++count;
-    const juce::String base = kind == TrackKind::Audio ? "Audio" : kind == TrackKind::Instrument ? "Inst"
+    const juce::String base = kind == TrackKind::Audio ? "Audio" : kind == TrackKind::Instrument ? "Inst" : kind == TrackKind::Midi ? "MIDI"
                             : kind == TrackKind::Bus ? "Bus" : kind == TrackKind::Master ? "Master" : "Out";
     t->name = name.isNotEmpty() ? name : (kind == TrackKind::Master ? base : base + " " + juce::String (count + 1));
     t->colour = kind == TrackKind::Master ? juce::Colour (0xffe0e0e0) : paletteColour ((int) s.tracks.size());
@@ -448,6 +454,11 @@ Id EngineController::addTrack (TrackKind kind, const juce::String& name) {
         auto it = std::find_if (tr.begin(), tr.end(), [] (const TrackPtr& x) { return x->kind == TrackKind::Bus; });
         tr.insert (it, t);
     }
+    if (kind == TrackKind::Midi) {   // play the instrument the keyboard was on, else the first instrument
+        auto focus = sessionPtr->findTrack (midiFocus);
+        if (focus && focus->kind == TrackKind::Instrument) t->midiTarget = focus->id;
+        else for (auto& o : tr) if (o->kind == TrackKind::Instrument && ! o->bounced) { t->midiTarget = o->id; break; }
+    }
     rebuildGraph();
     notify (Change::Structure, t->id);
     return t->id;
@@ -467,6 +478,7 @@ void EngineController::removeTrack (Id trackId) {
         if (o->auxParent == trackId) aux.push_back (o->id);
         if (o->folderOf == trackId) aux.push_back (o->id);   // its sum folder goes with it
         if (o->recordSource == trackId) o->recordSource = kInvalidId;
+        if (o->midiTarget == trackId) o->midiTarget = kInvalidId;
         if (o->bouncedInto == trackId) o->bouncedInto = kInvalidId;
     }
     std::set<Id> loops; for (auto& l : t->loops) loops.insert (l->id);
@@ -1150,6 +1162,147 @@ bool EngineController::exportTakeAudio (Id id, int take, juce::AudioBuffer<float
     }
     beats = tk.lengthBeats;
     return true;
+}
+
+// =========================================================================================
+// MIDI tracks and live MIDI focus
+// =========================================================================================
+bool EngineController::setMidiTarget (Id id, Id target) {
+    auto& s = *sessionPtr;
+    auto t = s.findTrack (id);
+    if (! t || t->kind != TrackKind::Midi) return false;
+    if (target != kInvalidId) {
+        auto d = s.findTrack (target);
+        if (! d || ! d->isMidiLike() || target == id) return false;
+        auto edges = routeEdges (s, id);
+        edges.push_back ({ id, t->outputBus != kInvalidId ? t->outputBus : kMasterId });
+        if (routing::wouldCreateCycle (edges, id, target)) return false;
+    }
+    const Id old = t->midiTarget;
+    t->midiTarget = target;
+    rebuildGraph();
+    if (old != kInvalidId && old != target) {   // no hanging notes on the track it used to play
+        EngineCommand e { EngineCommandType::FlushNotes }; e.trackId = old; audioEngine->send (e);
+    }
+    notify (Change::Structure, id);
+    return true;
+}
+
+void EngineController::publishMidiFocus() {
+    audioEngine->setMidiFocus (midiFocus, midiFollow);
+}
+
+void EngineController::setSelectedTrack (Id id) {
+    auto t = sessionPtr->findTrack (id);
+    if (! t || ! t->isMidiLike() || id == midiFocus) return;   // audio tracks and buses keep the last MIDI focus
+    const Id old = midiFocus;
+    midiFocus = id;
+    publishMidiFocus();
+    if (midiFollow && old != kInvalidId) {   // notes held while switching would hang on the old track
+        EngineCommand e { EngineCommandType::FlushNotes }; e.trackId = old; audioEngine->send (e);
+    }
+    notify (Change::Track, id);
+    if (old != kInvalidId) notify (Change::Track, old);
+}
+
+void EngineController::setMidiFollowsSelection (bool on) {
+    if (on == midiFollow) return;
+    midiFollow = on;
+    publishMidiFocus();
+    for (auto& t : sessionPtr->tracks) if (t->isMidiLike()) notify (Change::Track, t->id);
+}
+
+// =========================================================================================
+// Moving / copying loops between tracks
+// =========================================================================================
+bool EngineController::canHoldLoop (const TrackModel& t, LoopType type) noexcept {
+    if (t.bounced) return false;
+    switch (type) {
+        case LoopType::Midi:  return t.isMidiLike();
+        case LoopType::Audio: return t.kind == TrackKind::Audio || t.kind == TrackKind::Bus;
+        default:              return false;
+    }
+}
+
+void EngineController::insertLoopAt (TrackModel& t, LoopPtr l, int index) {
+    // index counts the loops shown on the loop page (scene loops), like the UI does.
+    auto pos = t.loops.end();
+    if (index >= 0) {
+        int n = 0;
+        for (auto it = t.loops.begin(); it != t.loops.end(); ++it)
+            if (isSceneLoop (**it) && n++ == index) { pos = it; break; }
+    }
+    t.loops.insert (pos, std::move (l));
+}
+
+bool EngineController::moveLoop (Id loopId, Id targetTrackId, int index) {
+    auto& s = *sessionPtr;
+    auto l = s.findLoop (loopId);
+    auto src = s.trackOfLoop (loopId);
+    auto dst = s.findTrack (targetTrackId);
+    if (! l || ! src || ! dst || ! canHoldLoop (*dst, l->type)) return false;
+    if (src == dst && index >= 0) {   // reorder within the track: index counts the gaps around the loop itself
+        int cur = 0;
+        for (auto& o : src->loops) { if (o == l) break; if (isSceneLoop (*o)) ++cur; }
+        if (index > cur) --index;
+        if (index == cur) return false;
+    }
+    src->loops.erase (std::remove (src->loops.begin(), src->loops.end(), l), src->loops.end());
+    l->trackId = dst->id;
+    insertLoopAt (*dst, l, index);
+    for (auto& c : s.timeline) if (c.loopId == loopId) c.trackId = dst->id;
+    rebuildGraph();
+    if (src != dst && l->type == LoopType::Midi) {   // a playing MIDI loop leaves: no hanging notes behind it
+        EngineCommand e { EngineCommandType::FlushNotes }; e.trackId = src->id; audioEngine->send (e);
+    }
+    notify (Change::Structure, loopId);
+    notify (Change::Timeline);
+    return true;
+}
+
+Id EngineController::copyLoop (Id loopId, Id targetTrackId, int index) {
+    auto& s = *sessionPtr;
+    auto src = s.findLoop (loopId);
+    auto dst = s.findTrack (targetTrackId);
+    if (! src || ! dst || ! src->rt || ! canHoldLoop (*dst, src->type)) return kInvalidId;
+    auto l = std::make_shared<LoopModel>();
+    l->id = s.allocateId();
+    l->trackId = dst->id;
+    l->type = src->type;
+    l->name = dst->id == src->trackId ? src->name + " copy" : src->name;
+    l->colour = src->colour;
+    l->settings = src->settings;
+    l->midiTakes = src->midiTakes;
+    l->automation = src->automation;
+    l->automationLengthBeats = src->automationLengthBeats;
+    l->volume = src->volume;
+    l->rt = makeLoopRt (l->id, dst->id, l->type);
+    l->rt->setSettingsOffline (l->settings);
+    l->rt->volume = l->volume;
+    // The new loop is not in the render graph yet, so its takes can be filled from this thread.
+    BlockTime offlineTime; offlineTime.beatsPerBar = s.transport.beatsPerBar;
+    LoopContext ctx; ctx.pool = &audioEngine->chunkPool();
+    if (l->type == LoopType::Audio) {
+        for (int k = 0; k < src->rt->takeCount() && k < kMaxTakes; ++k) {
+            juce::AudioBuffer<float> buf; double beats = 0;
+            if (exportTakeAudio (loopId, k, buf, beats))
+                l->rt->loadTake (k, buf.getArrayOfReadPointers(), buf.getNumChannels(), buf.getNumSamples(), beats,
+                                 audioEngine->chunkPool(), audioEngine->sampleRate());
+        }
+    } else {
+        for (size_t k = 0; k < l->midiTakes.size() && k < (size_t) kMaxTakes; ++k) {
+            LoopCommand def { LoopCommandType::DefineTake }; def.take = (int) k; def.lengthBeats = l->midiTakes[k].lengthBeats;
+            l->rt->command (def, offlineTime, ctx);
+            l->rt->midiSequences[k].publish (std::make_unique<MidiSequence> (MidiSequence::fromClip (l->midiTakes[k])), audioEngine->retirer());
+        }
+    }
+    l->rt->setActiveTakeOffline (std::clamp (src->rt->uiActiveTake.load(), 0, std::max (0, l->rt->takeCount() - 1)));
+    l->rt->setStoppedOffline();
+    publishLoopAutomation (*l);
+    insertLoopAt (*dst, l, index);
+    rebuildGraph();
+    notify (Change::Structure, l->id);
+    return l->id;
 }
 
 // =========================================================================================

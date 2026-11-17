@@ -13,7 +13,7 @@ namespace {
         cmdMixer, cmdAutomation, cmdEditor, cmdLoops, cmdTimeline, cmdBounced,
         cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets,
         cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdCheckUpdates, cmdAutoUpdate,
-        cmdOpenAutosave, cmdStopAll,
+        cmdOpenAutosave, cmdStopAll, cmdAddMidi, cmdMidiFollow,
         cmdScene1 = 0x3200, cmdScene2, cmdScene3, cmdScene4, cmdScene5, cmdScene6, cmdScene7, cmdScene8, cmdScene9,
         cmdZoom100 = 0x3100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200
     };
@@ -145,6 +145,8 @@ MainComponent::MainComponent (EngineController& c, MidiMapping& mm, PresetManage
 
     controller.addListener (this);
     selection.addChangeListener (this);
+    // Live MIDI follows the selected track (saved as an app setting, on by default).
+    controller.setMidiFollowsSelection (settings == nullptr || settings->getBoolValue ("midiFollowsSelection", true));
 
     // Pick a sensible initial selection.
     for (auto& t : controller.session().tracks)
@@ -321,6 +323,7 @@ void MainComponent::setDirty (bool d)
 
 void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
 {
+    controller.setSelectedTrack (selection.trackId);   // the keyboard follows Instrument / MIDI track selection
     commandManager.commandStatusChanged();
 }
 
@@ -504,6 +507,7 @@ void MainComponent::addTrack (TrackKind k)
     if (id == kInvalidId) return;
     selection.select (id);
     if (k == TrackKind::Instrument) showPluginMenu (controller, id, FxChain::Instrument, 0, &transport);
+    if (k == TrackKind::Midi) showPluginMenu (controller, id, FxChain::MidiFx, -1, &transport);
 }
 
 void MainComponent::setUiScale (double scale)
@@ -542,8 +546,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 break;
         case 3: for (int k = 0; k < 9; ++k) add (cmdScene1 + k);
                 m.addSeparator(); add (cmdStopAll); break;
-        case 4: add (cmdAddAudio); add (cmdAddInstrument); add (cmdAddBus); m.addSeparator();
-                add (cmdBounceTrack); add (cmdPresets); break;
+        case 4: add (cmdAddAudio); add (cmdAddInstrument); add (cmdAddMidi); add (cmdAddBus); m.addSeparator();
+                add (cmdBounceTrack); add (cmdPresets); m.addSeparator(); add (cmdMidiFollow); break;
         default: break;
     }
     return m;
@@ -555,6 +559,7 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& c)
                   cmdMixer, cmdAutomation, cmdEditor, cmdLoops, cmdTimeline, cmdBounced,
                   cmdAddAudio, cmdAddInstrument, cmdAddBus, cmdBounceTrack, cmdPresets,
                   cmdZoomIn, cmdZoomOut, cmdZoomReset, cmdCheckUpdates, cmdAutoUpdate, cmdOpenAutosave, cmdStopAll,
+                  cmdAddMidi, cmdMidiFollow,
                   cmdScene1, cmdScene2, cmdScene3, cmdScene4, cmdScene5, cmdScene6, cmdScene7, cmdScene8, cmdScene9,
                   cmdZoom100, cmdZoom125, cmdZoom150, cmdZoom175, cmdZoom200 });
 }
@@ -622,6 +627,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdAddAudio: i.setInfo ("Add Audio Track", "Add an audio track", "Track", 0); break;
         case cmdAddInstrument: i.setInfo ("Add Instrument Track", "Add an instrument track", "Track", 0); break;
         case cmdAddBus:   i.setInfo ("Add Bus", "Add a bus", "Track", 0); break;
+        case cmdAddMidi:  i.setInfo ("Add MIDI Track", "Add a MIDI track (DrumBridge, arps...) that plays another track", "Track", 0); break;
+        case cmdMidiFollow: i.setInfo ("MIDI Input Follows Selected Track", "Your keyboard / pads play the selected instrument or MIDI track", "Track", 0);
+                          i.setTicked (controller.midiFollowsSelection()); break;
         case cmdBounceTrack: i.setInfo ("Bounce Track", "Bounce the selected track", "Track", 0);
                           i.addDefaultKeypress ('b', cmd); i.setActive (hasTrack); break;
         case cmdPresets:  i.setInfo ("Channel Presets...", "Channel presets for the selected track", "Track", 0);
@@ -698,6 +706,12 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAddAudio: addTrack (TrackKind::Audio); return true;
         case cmdAddInstrument: addTrack (TrackKind::Instrument); return true;
         case cmdAddBus:   addTrack (TrackKind::Bus); return true;
+        case cmdAddMidi:  addTrack (TrackKind::Midi); return true;
+        case cmdMidiFollow:
+            controller.setMidiFollowsSelection (! controller.midiFollowsSelection());
+            if (settings != nullptr) { settings->setValue ("midiFollowsSelection", controller.midiFollowsSelection()); settings->saveIfNeeded(); }
+            commandManager.commandStatusChanged();
+            return true;
         case cmdBounceTrack: bounceSelectedTrack(); return true;
         case cmdPresets:
             if (selection.trackId != kInvalidId) presets.showChannelPresetMenu (selection.trackId, &transport);

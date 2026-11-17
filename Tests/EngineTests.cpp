@@ -405,6 +405,219 @@ static void testChimeraProcessor() {
     CHECK (std::memcmp (dx7ToVced (a.layers[0].fm).data(), dx7ToVced (b.layers[0].fm).data(), 155) == 0);
 }
 
+// ---- MIDI tracks, input focus, moving / copying loops ---------------------------------------------
+// A test "instrument": outputs a steady 0.5 on both channels while any note is held.
+struct NoteMeter : public juce::AudioPluginInstance {
+    NoteMeter() : juce::AudioPluginInstance (BusesProperties().withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+    int held = 0;
+    void fillInPluginDescription (juce::PluginDescription& d) const override { d.name = "NoteMeter"; d.isInstrument = true; d.pluginFormatName = "Test"; }
+    const juce::String getName() const override { return "NoteMeter"; }
+    void prepareToPlay (double, int) override {}
+    void releaseResources() override {}
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer& m) override {
+        for (const auto meta : m) {
+            const auto msg = meta.getMessage();
+            if (msg.isNoteOn()) ++held;
+            else if (msg.isNoteOff()) held = std::max (0, held - 1);
+            else if (msg.isAllNotesOff() || msg.isAllSoundOff()) held = 0;
+        }
+        b.clear();
+        if (held > 0) for (int ch = 0; ch < b.getNumChannels(); ++ch) juce::FloatVectorOperations::fill (b.getWritePointer (ch), 0.5f, b.getNumSamples());
+    }
+    double getTailLengthSeconds() const override { return 0; }
+    bool acceptsMidi() const override { return true; }
+    bool producesMidi() const override { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override { return false; }
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+};
+
+// Puts a NoteMeter straight into a track's instrument slot (tests only; the app goes through insertPlugin).
+static void giveNoteMeter (EngineController& c, Id track) {
+    auto t = c.session().findTrack (track);
+    auto slot = std::make_shared<PluginSlot>();
+    slot->id = c.session().allocateId();
+    slot->instance = std::make_unique<NoteMeter>();
+    slot->description.name = "NoteMeter"; slot->description.isInstrument = true;
+    slot->instance->setRateAndBufferSizeDetails (48000.0, 512);
+    slot->instance->prepareToPlay (48000.0, 512);
+    t->instrument = slot;
+    c.setTrackMidiInput (track, {}, 0);   // rebuilds the graph
+}
+
+// Meters hold their peak until read (and decay per read): drain, render, then read.
+static void drainMeters (EngineController& c) { for (auto& t : c.session().tracks) for (int i = 0; i < 40; ++i) c.meter (t->id); }
+static float trackLevel (Offline& o, Id track, double seconds = 0.1) {
+    o.run (0.05, false);
+    drainMeters (o.c);
+    o.run (seconds, false);
+    return o.c.meter (track).left;
+}
+
+static void testMidiTrackRouting() {
+    std::printf ("midi track -> instrument\n");
+    Offline o;
+    auto& c = o.c;
+    const Id inst = firstTrack (c, TrackKind::Instrument);
+    giveNoteMeter (c, inst);
+    const Id midi = c.addTrack (TrackKind::Midi);
+    auto mt = c.session().findTrack (midi);
+    CHECK (mt != nullptr && mt->kind == TrackKind::Midi);
+    CHECK (mt != nullptr && mt->midiTarget == inst);   // a new MIDI track plays the first instrument
+    CHECK (! c.setMidiTarget (midi, firstTrack (c, TrackKind::Audio)));   // audio tracks can't take MIDI
+    CHECK (! c.setMidiTarget (inst, midi));                                  // only MIDI tracks have a MIDI To
+    // A MIDI loop on the MIDI track sounds on the instrument.
+    const Id loop = c.addLoop (midi, LoopType::Midi);
+    MidiClip clip; clip.lengthBeats = 4; clip.notes.push_back ({ 0, 4, 36, 100, 1, false });
+    c.setMidiClip (loop, clip);
+    c.playLoop (loop);
+    CHECK (trackLevel (o, inst, 0.6) > 0.3f);
+    CHECK (c.meter (midi).left == 0.0f);                // the MIDI track itself makes no sound
+    // Unrouted: silence (and no hanging note on the old target).
+    c.setMidiTarget (midi, kInvalidId);
+    o.run (0.2, false);
+    CHECK (trackLevel (o, inst, 0.3) < 0.01f);
+    // Live input on the MIDI track reaches the instrument too.
+    c.stopAllLoops(); c.stop();
+    c.setMidiTarget (midi, inst);
+    c.setSelectedTrack (midi);
+    c.setMonitorMode (midi, MonitorMode::On);   // Auto would mute live input: the track already holds a loop
+    o.run (0.1, false);
+    c.engine().injectMidi (juce::MidiMessage::noteOn (1, 40, (juce::uint8) 100));
+    CHECK (trackLevel (o, inst) > 0.3f);
+    c.engine().injectMidi (juce::MidiMessage::noteOff (1, 40));
+    CHECK (trackLevel (o, inst, 0.3) < 0.01f);
+    // A MIDI -> MIDI chain can't loop back on itself.
+    const Id midi2 = c.addTrack (TrackKind::Midi);
+    CHECK (c.setMidiTarget (midi2, midi));
+    CHECK (! c.setMidiTarget (midi, midi2));
+    // Removing the target clears MIDI To.
+    c.removeTrack (inst);
+    CHECK (c.session().findTrack (midi)->midiTarget == kInvalidId);
+}
+
+static void testMidiFollowsSelection() {
+    std::printf ("live midi follows the selected track\n");
+    Offline o;
+    auto& c = o.c;
+    const Id a = firstTrack (c, TrackKind::Instrument);
+    const Id b = c.addTrack (TrackKind::Instrument);
+    giveNoteMeter (c, a); giveNoteMeter (c, b);
+    c.setMonitorMode (a, MonitorMode::On); c.setMonitorMode (b, MonitorMode::On);
+    auto play = [&] { drainMeters (c); c.engine().injectMidi (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100)); o.run (0.1, false); };
+    auto release = [&] { c.engine().injectMidi (juce::MidiMessage::allNotesOff (1)); o.run (0.3, false); drainMeters (c); };
+    // Nothing selected yet: every all-devices track listens (as before).
+    play();
+    CHECK (c.meter (a).left > 0.3f && c.meter (b).left > 0.3f);
+    release();
+    c.setSelectedTrack (b);
+    CHECK (c.midiFocusTrack() == b);
+    play();
+    CHECK (c.meter (a).left < 0.01f && c.meter (b).left > 0.3f);
+    release();
+    c.setSelectedTrack (firstTrack (c, TrackKind::Audio));   // an audio track keeps the last MIDI focus
+    CHECK (c.midiFocusTrack() == b);
+    // A track set to one particular device keeps listening to it whatever is selected.
+    c.setTrackMidiInput (a, "some-device", 0);
+    CHECK (c.session().findTrack (a)->midiInputDevice == "some-device");
+    // Follow off: every all-devices track listens again.
+    c.setTrackMidiInput (a, {}, 0);
+    c.setMidiFollowsSelection (false);
+    play();
+    CHECK (c.meter (a).left > 0.3f && c.meter (b).left > 0.3f);
+    release();
+    // Removing the focus track: everyone listens again.
+    c.setMidiFollowsSelection (true);
+    c.setSelectedTrack (a);
+    c.removeTrack (a);
+    CHECK (c.midiFocusTrack() == kInvalidId);
+    play();
+    CHECK (c.meter (b).left > 0.3f);
+}
+
+static void testMoveAndCopyLoops() {
+    std::printf ("move / copy loops between tracks\n");
+    Offline o;
+    auto& c = o.c;
+    c.setMasterBars (1);
+    LoopSettings s = c.session().transport.defaultLoopSettings; s.startQuantize = Quantize::None;
+    c.setDefaultLoopSettings (s);
+    const Id audio = firstTrack (c, TrackKind::Audio);
+    const Id inst = firstTrack (c, TrackKind::Instrument);
+    const Id inst2 = c.addTrack (TrackKind::Instrument);
+    const Id midi = c.addTrack (TrackKind::Midi);
+    const Id audio2 = c.addTrack (TrackKind::Audio);
+    // MIDI loops
+    const Id m1 = c.addLoop (inst, LoopType::Midi);
+    const Id m2 = c.addLoop (inst, LoopType::Midi);
+    MidiClip clip; clip.lengthBeats = 8; clip.notes.push_back ({ 0, 1, 60, 100, 1, false });
+    c.setMidiClip (m1, clip);
+    c.addTimelineClip (m1, 0, 8);
+    CHECK (! c.moveLoop (m1, audio));                  // MIDI can't go on an audio track
+    CHECK (c.moveLoop (m1, midi));
+    CHECK (c.session().trackOfLoop (m1)->id == midi);
+    CHECK (c.session().findLoop (m1)->trackId == midi);
+    CHECK (c.session().timeline.size() == 1 && c.session().timeline[0].trackId == midi);   // its timeline clip follows
+    CHECK (c.midiClip (m1) && c.midiClip (m1)->notes.size() == 1);
+    c.playLoop (m1);
+    o.run (0.3, false);
+    CHECK (c.loopStatus (m1).state == LoopState::Playing);   // keeps playing on its new track
+    const Id copy = c.copyLoop (m1, inst2, 0);
+    CHECK (copy != kInvalidId && c.session().trackOfLoop (copy)->id == inst2);
+    CHECK (c.midiClip (copy) && c.midiClip (copy)->notes.size() == 1 && c.midiClip (copy)->notes[0].pitch == 60);
+    CHECK (c.loopStatus (copy).numTakes == 1 && c.loopStatus (copy).state == LoopState::Stopped);
+    CHECK (c.midiClip (m1) && c.midiClip (m1)->notes.size() == 1);   // the original is untouched
+    // Reorder within a track: [m2, m3] -> move m2 below m3.
+    const Id m3 = c.addLoop (inst, LoopType::Midi);
+    CHECK (c.moveLoop (m2, inst, 2));
+    auto it = c.session().findTrack (inst);
+    CHECK (it->loops.size() == 2 && it->loops[0]->id == m3 && it->loops[1]->id == m2);
+    CHECK (! c.moveLoop (m2, inst, 2));   // already there
+    // Audio loops: record one, copy it to another audio track, move it.
+    const Id a1 = c.addLoop (audio, LoopType::Audio);
+    c.recordLoop (a1);
+    o.run (2.4);
+    CHECK (c.loopStatus (a1).numTakes == 1);
+    CHECK (c.copyLoop (a1, inst) == kInvalidId);      // audio can't go on an instrument track
+    const Id a2 = c.copyLoop (a1, audio2);
+    CHECK (a2 != kInvalidId);
+    juce::AudioBuffer<float> x, y; double bx = 0, by = 0;
+    CHECK (c.exportTakeAudio (a1, 0, x, bx) && c.exportTakeAudio (a2, 0, y, by));
+    CHECK (x.getNumSamples() == y.getNumSamples() && std::abs (bx - by) < 1e-9);
+    if (x.getNumSamples() == y.getNumSamples() && x.getNumSamples() > 2000)
+        CHECK (std::abs (x.getSample (0, 2000) - y.getSample (0, 2000)) < 1e-6f);
+    c.playLoop (a2);
+    o.run (0.5, false);
+    CHECK (c.loopStatus (a2).state == LoopState::Playing);
+    CHECK (c.moveLoop (a1, audio2, 0));
+    CHECK (c.session().findTrack (audio)->loops.empty() && c.session().findTrack (audio2)->loops.size() == 2);
+}
+
+static void testMidiTrackSaveLoad() {
+    std::printf ("midi track save / load\n");
+    Offline o;
+    auto& c = o.c;
+    const Id inst = firstTrack (c, TrackKind::Instrument);
+    const Id midi = c.addTrack (TrackKind::Midi, "Drums in");
+    CHECK (c.session().findTrack (midi)->midiTarget == inst);
+    auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("elooper-midi-test.elooper");
+    dir.deleteRecursively();
+    CHECK (SessionSerializer::save (c, dir).wasOk());
+    Offline o2;
+    bool done = false;
+    SessionSerializer::load (o2.c, dir, [&] (juce::Result) { done = true; });
+    for (int i = 0; i < 50 && ! done; ++i) o2.run (0.02, false);
+    auto t = o2.c.session().findTrack (midi);
+    CHECK (t != nullptr && t->kind == TrackKind::Midi && t->midiTarget == inst && t->name == "Drums in");
+    dir.deleteRecursively();
+}
+
 int main() {
     juce::ScopedJuceInitialiser_GUI init;
     testRecordLoopAndAutoMute();
@@ -417,6 +630,10 @@ int main() {
     testScenes();
     testAutomationWrite();
     testChimeraProcessor();
+    testMidiTrackRouting();
+    testMidiFollowsSelection();
+    testMoveAndCopyLoops();
+    testMidiTrackSaveLoad();
     std::printf (failures == 0 ? "engine tests passed\n" : "%d engine check(s) FAILED\n", failures);
     return failures == 0 ? 0 : 1;
 }

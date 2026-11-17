@@ -195,12 +195,32 @@ void LoopCell::paint (juce::Graphics& g)
 void LoopCell::mouseDown (const juce::MouseEvent& e)
 {
     selection.select (trackId, loopId);
+    dragArmed = dragStarted = false;
     if (e.mods.isPopupMenu()) { showMenu(); return; }
+    // Option-press never triggers: it grabs the loop to drag it to another track (Option+Cmd copies).
+    if (e.mods.isAltDown()) { dragArmed = true; return; }
     // Live rule: every press acts, however fast you tap (no double-click swallowing a re-tap).
     // Cmd-click opens the MIDI editor; Shift-click overdubs.
     if (e.mods.isCommandDown()) { if (type == LoopType::Midi && onEdit) onEdit (trackId, loopId, true); return; }
     if (e.mods.isShiftDown()) controller.overdubLoop (loopId);
     else controller.triggerLoop (loopId);
+}
+
+void LoopCell::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! dragArmed || dragStarted || e.getDistanceFromDragStart() < 6) return;
+    if (auto* dc = juce::DragAndDropContainer::findParentDragContainerFor (this)) {
+        dragStarted = true;
+        auto img = createComponentSnapshot (getLocalBounds(), true, 1.0f);
+        img.multiplyAllAlphas (0.75f);
+        juce::Point<int> offset (-e.getMouseDownX(), -e.getMouseDownY());
+        dc->startDragging (loopclip::dragPrefix + juce::String ((juce::int64) loopId), this, juce::ScaledImage (img), true, &offset);
+    }
+}
+
+void LoopCell::mouseUp (const juce::MouseEvent&)
+{
+    dragArmed = dragStarted = false;
 }
 
 void LoopCell::mouseDoubleClick (const juce::MouseEvent&)
@@ -310,6 +330,17 @@ void LoopCell::showMenu()
         ui::askText ("Rename Loop", "Loop name:", n, [c, id] (juce::String s) { c->setLoopName (id, s.trim()); });
     });
     am.add (m, "Duplicate", [c, id] { c->duplicateLoop (id); }, false, lt != LoopType::Audio);
+    am.add (m, "Copy Loop", [id] { loopclip::copied = id; });
+    {
+        // Paste a copied loop right after this one (same kind of track only: MIDI on MIDI/instrument, audio on audio).
+        auto src = c->session().findLoop (loopclip::copied);
+        auto here = c->session().findTrack (tid);
+        int pos = 0;
+        if (here != nullptr) for (auto& o : here->loops) { if (o->id == id) break; if (EngineController::isSceneLoop (*o)) ++pos; }
+        const bool ok = src != nullptr && here != nullptr && EngineController::canHoldLoop (*here, src->type);
+        am.add (m, src != nullptr ? "Paste Loop (" + src->name + ")" : juce::String ("Paste Loop"),
+                [c, tid, pos] { c->copyLoop (loopclip::copied, tid, pos + 1); }, false, ok);
+    }
     am.add (m, "Add to Timeline at Playhead", [c, id] {
         const int bpb = juce::jmax (1, c->session().transport.beatsPerBar);
         const double beat = std::floor (c->transportStatus().beat / bpb) * bpb;
