@@ -173,7 +173,7 @@ void showMidiToMenu (EngineController& controller, Id trackId, juce::Component* 
     if (t == nullptr || t->kind != TrackKind::Midi) return;
     ActionMenu am; juce::PopupMenu m;
     auto* c = &controller; const Id id = trackId;
-    m.addSectionHeader ("Play this track's MIDI on");
+    m.addSectionHeader ("Play this track's MIDI on (tick as many as you like)");
     int n = 0;
     for (auto& o : controller.session().tracks) {
         if (o->id == trackId || ! o->isMidiLike() || o->bounced) continue;
@@ -181,15 +181,27 @@ void showMidiToMenu (EngineController& controller, Id trackId, juce::Component* 
         juce::String label = o->name;
         if (o->kind == TrackKind::Instrument) label << "  (" << (o->instrument != nullptr ? o->instrument->name() : juce::String ("no instrument")) << ")";
         else label << "  (MIDI track)";
-        am.add (m, label, [c, id, dest] {
-            if (! c->setMidiTarget (id, dest)) ui::alert ("MIDI To", "That would send the MIDI round in a loop.");
-        }, t->midiTarget == dest, true, o->colour);
+        const bool on = t->playsMidiOn (dest);
+        juce::Component::SafePointer<juce::Component> again (target);
+        am.add (m, label, [c, id, dest, on, again] {
+            if (! c->setMidiTargetOn (id, dest, ! on)) { ui::alert ("MIDI To", "That would send the MIDI round in a loop."); return; }
+            // Reopen so more outputs can be ticked in one go.
+            if (again != nullptr) juce::MessageManager::callAsync ([c, id, again] { if (again != nullptr) showMidiToMenu (*c, id, again.getComponent()); });
+        }, on, true, o->colour);
         ++n;
     }
     if (n == 0) am.add (m, "(no instrument tracks yet)", {}, false, false);
     m.addSeparator();
-    am.add (m, "None", [c, id] { c->setMidiTarget (id, kInvalidId); }, t->midiTarget == kInvalidId);
+    am.add (m, "None (all off)", [c, id] { c->setMidiTarget (id, kInvalidId); }, t->midiTargets.empty());
     am.show (m, target);
+}
+
+juce::String midiToText (const Session& s, const TrackModel& t)
+{
+    juce::StringArray names;
+    for (auto x : t.midiTargets) if (auto d = s.findTrack (x)) names.add (d->name);
+    if (names.isEmpty()) return "MIDI To: none";
+    return juce::String (juce::CharPointer_UTF8 ("To \xe2\x96\xb8 ")) + names.joinIntoString (" + ");
 }
 
 void showTrackMenu (EngineController& controller, PresetManager& presets, Id trackId, juce::Component* target)

@@ -16,7 +16,8 @@ public:
     {
         auto t = controller.session().findTrack (trackId);
         hasArm = t != nullptr && (t->kind == TrackKind::Audio || t->isMidiLike());
-        setTooltip (hasArm ? "Mute / Solo / Record arm" : "Mute / Solo");
+        hasSolo = t == nullptr || t->kind != TrackKind::Midi;   // MIDI tracks: just Mute and Record arm
+        setTooltip (! hasSolo ? "Mute / Record arm" : hasArm ? "Mute / Solo / Record arm" : "Mute / Solo");
     }
 
     ~Buttons() override { endMute(); }
@@ -45,10 +46,11 @@ public:
             }
         };
         draw (0, "M", muted, theme::overdub);
-        draw (1, "S", soloed, theme::armed);
+        if (hasSolo) draw (1, "S", soloed, theme::armed);
         if (hasArm) {
-            draw (2, {}, armed, theme::record);
-            const auto c = rect (2).toFloat().getCentre();
+            const int ai = armIndex();
+            draw (ai, {}, armed, theme::record);
+            const auto c = rect (ai).toFloat().getCentre();
             g.setColour (armed ? juce::Colours::white : theme::record.withAlpha (0.75f));
             g.fillEllipse (c.x - 5.0f, c.y - 5.0f, 10.0f, 10.0f);
         }
@@ -66,9 +68,9 @@ public:
             controller.beginParamGesture (trackId, tgt);
             controller.setParam (trackId, tgt, t->rt->mute.load() ? 0.0f : 1.0f);
             muteOpen = true;
-        } else if (i == 1) {
+        } else if (hasSolo && i == 1) {
             t->rt->solo.store (! t->rt->solo.load());
-        } else if (i == 2) {
+        } else if (hasArm && i == armIndex()) {
             controller.setArmed (trackId, ! t->rt->armed.load());
         }
         poll();
@@ -77,7 +79,8 @@ public:
     void mouseUp (const juce::MouseEvent&) override { endMute(); }
 
 private:
-    int count() const { return hasArm ? 3 : 2; }
+    int count() const { return 1 + (hasSolo ? 1 : 0) + (hasArm ? 1 : 0); }
+    int armIndex() const { return hasSolo ? 2 : 1; }
     juce::Rectangle<int> rect (int i) const
     {
         const int gap = 3, n = count();
@@ -99,7 +102,7 @@ private:
     EngineController& controller;
     Selection& selection;
     const Id trackId;
-    bool hasArm = false, muted = false, soloed = false, armed = false, muteOpen = false;
+    bool hasArm = false, hasSolo = true, muted = false, soloed = false, armed = false, muteOpen = false;
 };
 
 // ---- Pre FX / Post FX / MIDI FX ----------------------------------------------------------------------
@@ -239,13 +242,14 @@ public:
     MidiToButton (EngineController& c, Selection& s, Id id) : controller (c), selection (s), trackId (id)
     {
         setRepaintsOnMouseActivity (true);
-        setTooltip ("MIDI To: the track that plays this track's MIDI (click to choose)");
+        setTooltip ("MIDI To: the tracks that play this track's MIDI (click to tick them on / off)");
         refresh();
     }
     void refresh()
     {
         auto t = controller.session().findTrack (trackId);
-        auto d = t != nullptr ? controller.session().findTrack (t->midiTarget) : nullptr;
+        text = t != nullptr ? midiToText (controller.session(), *t) : juce::String();
+        auto d = t != nullptr && ! t->midiTargets.empty() ? controller.session().findTrack (t->midiTargets.front()) : nullptr;
         targetName = d != nullptr ? d->name : juce::String();
         targetColour = d != nullptr ? d->colour : theme::outline;
         repaint();
@@ -259,8 +263,7 @@ public:
         g.drawRoundedRectangle (b, 4.0f, 1.0f);
         g.setColour (targetName.isNotEmpty() ? theme::text : theme::textDim);
         g.setFont (theme::font (11.0f, targetName.isNotEmpty()));
-        g.drawFittedText (targetName.isNotEmpty() ? juce::String (juce::CharPointer_UTF8 ("To \xe2\x96\xb8 ")) + targetName : juce::String ("MIDI To: none"),
-                          getLocalBounds().reduced (3, 0), juce::Justification::centred, 1, 0.7f);
+        g.drawFittedText (text, getLocalBounds().reduced (3, 0), juce::Justification::centred, 1, 0.6f);
     }
     void mouseDown (const juce::MouseEvent&) override
     {
@@ -271,7 +274,7 @@ private:
     EngineController& controller;
     Selection& selection;
     const Id trackId;
-    juce::String targetName;
+    juce::String targetName, text;
     juce::Colour targetColour;
 };
 
@@ -292,7 +295,7 @@ TrackControls::TrackControls (EngineController& c, Selection& s, PresetManager& 
     post = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::Post);
     monitor = std::make_unique<MonitorButton> (c, s, trackId);
     if (auto t = c.session().findTrack (trackId)) {
-        hasMonitor = t->kind == TrackKind::Audio || t->isMidiLike();
+        hasMonitor = t->kind == TrackKind::Audio || t->kind == TrackKind::Instrument;   // MIDI tracks always pass live MIDI
         if (t->isMidiLike()) midi = std::make_unique<ChainButton> (c, s, p, trackId, FxChain::MidiFx);
         if (t->kind == TrackKind::Midi) midiTo = std::make_unique<MidiToButton> (c, s, trackId);
     }
@@ -332,6 +335,9 @@ void TrackControls::layout (juce::Rectangle<int> iconR, juce::Rectangle<int> msr
     if (midiTo) {   // MIDI track: MIDI To where Pre / Post FX would be, MIDI FX under it
         midiTo->setBounds (fx);
         if (midi) midi->setBounds (inR);
+        // Just M and record arm: two slim buttons, the same size as on the other tracks' four-button row.
+        const int gap = 3, cw = (msr.getWidth() - gap * 3) / 4;
+        msr = msr.withWidth (cw * 2 + gap);
     } else if (midi) midi->setBounds (midiR);
     gainBar->setBounds (inR);
     panBar->setBounds (panR);

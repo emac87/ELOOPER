@@ -111,7 +111,7 @@ static std::vector<RouteEdge> routeEdges (const Session& s, Id skipFrom = kInval
         for (auto& snd : t->sends) e.push_back ({ t->id, snd.busId });
         if (t->auxParent != kInvalidId) e.push_back ({ t->auxParent, t->id });
         if (t->recordSource != kInvalidId) e.push_back ({ t->recordSource, t->id });
-        if (t->midiTarget != kInvalidId) e.push_back ({ t->id, t->midiTarget });   // MIDI flows before the target plays
+        for (auto dst : t->midiTargets) e.push_back ({ t->id, dst });   // MIDI flows before the targets play
     }
     return e;
 }
@@ -149,7 +149,9 @@ void EngineController::rebuildGraph() {
         n.recordSourceIndex = t->recordSource != kInvalidId && indexOf.count (t->recordSource) ? indexOf[t->recordSource] : -1;
         n.auxParentIndex = t->auxParent != kInvalidId && indexOf.count (t->auxParent) ? indexOf[t->auxParent] : -1;
         n.auxPair = t->auxPair;
-        n.midiTargetIndex = t->kind == TrackKind::Midi && t->midiTarget != kInvalidId && indexOf.count (t->midiTarget) ? indexOf[t->midiTarget] : -1;
+        n.midiTargetIndices.clear();
+        if (t->kind == TrackKind::Midi)
+            for (auto dst : t->midiTargets) if (indexOf.count (dst)) n.midiTargetIndices.push_back (indexOf[dst]);
 
         int maxCh = 2;
         auto addPlugins = [&] (const std::vector<PluginSlotPtr>& src, std::vector<PluginNode>& dst) {
@@ -456,8 +458,8 @@ Id EngineController::addTrack (TrackKind kind, const juce::String& name) {
     }
     if (kind == TrackKind::Midi) {   // play the instrument the keyboard was on, else the first instrument
         auto focus = sessionPtr->findTrack (midiFocus);
-        if (focus && focus->kind == TrackKind::Instrument) t->midiTarget = focus->id;
-        else for (auto& o : tr) if (o->kind == TrackKind::Instrument && ! o->bounced) { t->midiTarget = o->id; break; }
+        if (focus && focus->kind == TrackKind::Instrument) t->midiTargets = { focus->id };
+        else for (auto& o : tr) if (o->kind == TrackKind::Instrument && ! o->bounced) { t->midiTargets = { o->id }; break; }
     }
     rebuildGraph();
     notify (Change::Structure, t->id);
@@ -478,7 +480,7 @@ void EngineController::removeTrack (Id trackId) {
         if (o->auxParent == trackId) aux.push_back (o->id);
         if (o->folderOf == trackId) aux.push_back (o->id);   // its sum folder goes with it
         if (o->recordSource == trackId) o->recordSource = kInvalidId;
-        if (o->midiTarget == trackId) o->midiTarget = kInvalidId;
+        o->midiTargets.erase (std::remove (o->midiTargets.begin(), o->midiTargets.end(), trackId), o->midiTargets.end());
         if (o->bouncedInto == trackId) o->bouncedInto = kInvalidId;
     }
     std::set<Id> loops; for (auto& l : t->loops) loops.insert (l->id);
@@ -1167,24 +1169,47 @@ bool EngineController::exportTakeAudio (Id id, int take, juce::AudioBuffer<float
 // =========================================================================================
 // MIDI tracks and live MIDI focus
 // =========================================================================================
-bool EngineController::setMidiTarget (Id id, Id target) {
+bool EngineController::canPlayMidiOn (Id id, Id target, const std::vector<Id>& others) const {
     auto& s = *sessionPtr;
     auto t = s.findTrack (id);
-    if (! t || t->kind != TrackKind::Midi) return false;
-    if (target != kInvalidId) {
-        auto d = s.findTrack (target);
-        if (! d || ! d->isMidiLike() || target == id) return false;
-        auto edges = routeEdges (s, id);
-        edges.push_back ({ id, t->outputBus != kInvalidId ? t->outputBus : kMasterId });
-        if (routing::wouldCreateCycle (edges, id, target)) return false;
-    }
-    const Id old = t->midiTarget;
-    t->midiTarget = target;
+    auto d = s.findTrack (target);
+    if (! t || ! d || ! d->isMidiLike() || target == id) return false;
+    auto edges = routeEdges (s, id);
+    edges.push_back ({ id, t->outputBus != kInvalidId ? t->outputBus : kMasterId });
+    for (auto o : others) if (o != target) edges.push_back ({ id, o });
+    return ! routing::wouldCreateCycle (edges, id, target);
+}
+
+void EngineController::applyMidiTargets (TrackModel& t, std::vector<Id> targets) {
+    const auto old = t.midiTargets;
+    t.midiTargets = std::move (targets);
     rebuildGraph();
-    if (old != kInvalidId && old != target) {   // no hanging notes on the track it used to play
-        EngineCommand e { EngineCommandType::FlushNotes }; e.trackId = old; audioEngine->send (e);
+    for (auto o : old) if (! t.playsMidiOn (o)) {   // no hanging notes on a track it stopped playing
+        EngineCommand e { EngineCommandType::FlushNotes }; e.trackId = o; audioEngine->send (e);
     }
-    notify (Change::Structure, id);
+    notify (Change::Structure, t.id);
+}
+
+bool EngineController::setMidiTarget (Id id, Id target) {
+    auto t = sessionPtr->findTrack (id);
+    if (! t || t->kind != TrackKind::Midi) return false;
+    if (target != kInvalidId && ! canPlayMidiOn (id, target, {})) return false;
+    applyMidiTargets (*t, target != kInvalidId ? std::vector<Id> { target } : std::vector<Id> {});
+    return true;
+}
+
+bool EngineController::setMidiTargetOn (Id id, Id target, bool on) {
+    auto t = sessionPtr->findTrack (id);
+    if (! t || t->kind != TrackKind::Midi || target == kInvalidId) return false;
+    if (on == t->playsMidiOn (target)) return true;
+    auto list = t->midiTargets;
+    if (on) {
+        if (! canPlayMidiOn (id, target, list)) return false;
+        list.push_back (target);
+    } else {
+        list.erase (std::remove (list.begin(), list.end(), target), list.end());
+    }
+    applyMidiTargets (*t, std::move (list));
     return true;
 }
 

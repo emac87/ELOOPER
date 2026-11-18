@@ -106,7 +106,9 @@ public:
     void setSendPreFader (Id trackId, int sendIndex, bool pre);
     // MIDI tracks: which Instrument (or MIDI) track plays their MIDI output. kInvalidId = none.
     // False if the target can't take MIDI or it would make a loop.
-    bool setMidiTarget (Id midiTrackId, Id targetTrackId);
+    bool setMidiTarget (Id midiTrackId, Id targetTrackId);          // exactly this one (kInvalidId = none)
+    // Several outputs: turn one destination on or off, keeping the others. False if it can't take MIDI or would loop.
+    bool setMidiTargetOn (Id midiTrackId, Id targetTrackId, bool on);
 
     // Live MIDI follows the selection: the last selected Instrument / MIDI track gets the keyboard
     // (tracks set to one particular MIDI device keep listening to it). Call on every selection change.
@@ -251,6 +253,8 @@ public:
     std::function<void (const juce::MidiMessage&, const juce::String& deviceId)> onMidiInput;
 
 private:
+    bool canPlayMidiOn (Id midiTrackId, Id target, const std::vector<Id>& otherTargets) const;
+    void applyMidiTargets (TrackModel&, std::vector<Id> targets);
     struct Impl;
     friend struct Impl;
     std::unique_ptr<Impl> impl;

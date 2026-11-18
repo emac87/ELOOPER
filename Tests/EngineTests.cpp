@@ -469,7 +469,7 @@ static void testMidiTrackRouting() {
     const Id midi = c.addTrack (TrackKind::Midi);
     auto mt = c.session().findTrack (midi);
     CHECK (mt != nullptr && mt->kind == TrackKind::Midi);
-    CHECK (mt != nullptr && mt->midiTarget == inst);   // a new MIDI track plays the first instrument
+    CHECK (mt != nullptr && mt->playsMidiOn (inst));   // a new MIDI track plays the first instrument
     CHECK (! c.setMidiTarget (midi, firstTrack (c, TrackKind::Audio)));   // audio tracks can't take MIDI
     CHECK (! c.setMidiTarget (inst, midi));                                  // only MIDI tracks have a MIDI To
     // A MIDI loop on the MIDI track sounds on the instrument.
@@ -497,9 +497,29 @@ static void testMidiTrackRouting() {
     const Id midi2 = c.addTrack (TrackKind::Midi);
     CHECK (c.setMidiTarget (midi2, midi));
     CHECK (! c.setMidiTarget (midi, midi2));
+    // Several outputs: a second instrument plays the same MIDI, and each can be switched off.
+    const Id inst2 = c.addTrack (TrackKind::Instrument);
+    giveNoteMeter (c, inst2);
+    CHECK (c.setMidiTargetOn (midi, inst2, true));
+    CHECK (c.session().findTrack (midi)->midiTargets.size() == 2);
+    c.engine().injectMidi (juce::MidiMessage::noteOn (1, 40, (juce::uint8) 100));
+    CHECK (trackLevel (o, inst) > 0.3f);
+    CHECK (trackLevel (o, inst2) > 0.3f);
+    c.engine().injectMidi (juce::MidiMessage::noteOff (1, 40));
+    o.run (0.3, false);
+    CHECK (c.setMidiTargetOn (midi, inst, false));
+    c.engine().injectMidi (juce::MidiMessage::noteOn (1, 40, (juce::uint8) 100));
+    CHECK (trackLevel (o, inst2) > 0.3f);
+    CHECK (trackLevel (o, inst, 0.3) < 0.01f);
+    c.engine().injectMidi (juce::MidiMessage::noteOff (1, 40));
+    o.run (0.3, false);
+    CHECK (! c.setMidiTargetOn (midi, midi2, true));   // midi2 already plays on midi: would loop
+    CHECK (c.setMidiTargetOn (midi, inst, true));
+    c.removeTrack (inst2);
+    CHECK (c.session().findTrack (midi)->midiTargets.size() == 1);
     // Removing the target clears MIDI To.
     c.removeTrack (inst);
-    CHECK (c.session().findTrack (midi)->midiTarget == kInvalidId);
+    CHECK (c.session().findTrack (midi)->midiTargets.empty());
 }
 
 static void testMidiFollowsSelection() {
@@ -605,7 +625,7 @@ static void testMidiTrackSaveLoad() {
     auto& c = o.c;
     const Id inst = firstTrack (c, TrackKind::Instrument);
     const Id midi = c.addTrack (TrackKind::Midi, "Drums in");
-    CHECK (c.session().findTrack (midi)->midiTarget == inst);
+    CHECK (c.session().findTrack (midi)->playsMidiOn (inst));
     auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("elooper-midi-test.elooper");
     dir.deleteRecursively();
     CHECK (SessionSerializer::save (c, dir).wasOk());
@@ -614,7 +634,7 @@ static void testMidiTrackSaveLoad() {
     SessionSerializer::load (o2.c, dir, [&] (juce::Result) { done = true; });
     for (int i = 0; i < 50 && ! done; ++i) o2.run (0.02, false);
     auto t = o2.c.session().findTrack (midi);
-    CHECK (t != nullptr && t->kind == TrackKind::Midi && t->midiTarget == inst && t->name == "Drums in");
+    CHECK (t != nullptr && t->kind == TrackKind::Midi && t->playsMidiOn (inst) && t->name == "Drums in");
     dir.deleteRecursively();
 }
 

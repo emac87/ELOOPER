@@ -9,6 +9,8 @@ namespace el {
 
 // MIDI tracks: pick which Instrument / MIDI track plays their MIDI.
 void showMidiToMenu (EngineController&, Id midiTrackId, juce::Component* target);
+// "To ▸ Tekno + Kontakt" (or "MIDI To: none") for a MIDI track's label and mixer strip.
+juce::String midiToText (const Session&, const TrackModel&);
 void showTrackMenu (EngineController&, PresetManager&, Id trackId, juce::Component* target);
 void renameTrack (EngineController&, Id trackId);
 void confirmBounceTrack (EngineController&, Id trackId);

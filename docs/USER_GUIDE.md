@@ -80,11 +80,11 @@ A new session starts with one audio track and one instrument track.
 A MIDI track holds MIDI plug-ins (DrumBridge, arpeggiators, chord tools) instead of an instrument, and sends their output to another track to play. Use one when the same pads or MIDI loops should go through DrumBridge into a drum plug-in on another track.
 
 1. Choose **Add MIDI Track**. The plug-in menu opens: pick DrumBridge (AU MIDI Effects). Its window opens by itself.
-2. Its label shows **To ▸** and the track it plays. A new MIDI track plays the instrument track your keyboard was on (or the first instrument track). Click **To ▸** to pick another Instrument or MIDI track, or None.
+2. Its label shows **To ▸** and the track it plays. A new MIDI track plays the instrument track your keyboard was on (or the first instrument track). Click **To ▸** for the list of Instrument and MIDI tracks: tick as many as you like to play them all at once, click a ticked one to switch it off (the list reopens so you can tick several in a row), or None to switch them all off. The label shows them all, e.g. **To ▸ Tekno + Kontakt**.
 3. **MIDI FX** under it adds more MIDI plug-ins after the first; the plug-in icon shows or hides the first one.
 4. Select the MIDI track and play: your pads go through DrumBridge into the instrument. **+** adds MIDI loops; they record what you play *before* DrumBridge, so changing a drum map later changes old loops too.
 
-A MIDI track has **M**, **S**, record arm and **I** like an instrument track, but no Pre / Post FX, In, Pan, sends or output. On the mixer its strip only shows its MIDI FX and **To ▸** at the bottom. MIDI can't be sent round in a circle (a MIDI track can't end up playing itself).
+A MIDI track's label has just two slim buttons, **M** (mute) and record arm: no **S** or **I**, because live MIDI always passes straight through it. It has no Pre / Post FX, In, Pan, sends or output. On the mixer its strip only shows its MIDI FX and **To ▸** at the bottom. MIDI can't be sent round in a circle (a MIDI track can't end up playing itself).
 
 ### Your keyboard follows the selected track
 

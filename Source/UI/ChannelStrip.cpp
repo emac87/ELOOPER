@@ -128,9 +128,8 @@ void ChannelStrip::updateHeader (const TrackModel& t)
     else line1 = "Master";
 
     if (t.kind == TrackKind::Midi) {
-        auto d = controller.session().findTrack (t.midiTarget);
-        outputSlot->setText (d != nullptr ? juce::String (juce::CharPointer_UTF8 ("To \xe2\x96\xb8 ")) + d->name : juce::String ("MIDI To: none"));
-        outputSlot->setTooltip ("MIDI To: the track that plays this track's MIDI");
+        outputSlot->setText (midiToText (controller.session(), t));
+        outputSlot->setTooltip ("MIDI To: the tracks that play this track's MIDI (tick as many as you like)");
         fader->setVisible (false);
         icon->refresh();
         repaint();

@@ -28,7 +28,7 @@ struct TrackNode {
     juce::String midiDevice; int midiDeviceIndex = -1; int midiChannel = 0;
     int recordSourceIndex = -1;           // resample source node (bounce)
     int auxParentIndex = -1; int auxPair = 0;
-    int midiTargetIndex = -1;             // MIDI tracks: node whose instrument plays our MIDI output
+    std::vector<int> midiTargetIndices;   // MIDI tracks: nodes whose instruments play our MIDI output
     juce::MidiBuffer routedMidi;           // MIDI sent to this node by MIDI tracks this block
     std::vector<PluginNode> midiFx, pre, post;
     PluginNode instrument; bool hasInstrument = false;

@@ -464,6 +464,7 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
     const auto mode = rt.monitor.load (std::memory_order_relaxed);
     bool monitor = mode == MonitorMode::On || rt.armed.load (std::memory_order_relaxed)
                    || (mode == MonitorMode::Auto && (anyRecording || ! anyContent));
+    if (n.kind == TrackKind::Midi) monitor = true;       // MIDI tracks pass live MIDI straight through (no monitor button)
     if (isBounceSource (n.id)) monitor = false;          // bounce bakes the loops, not the live input
     rt.inputAudible.store (monitor, std::memory_order_relaxed);
 
@@ -525,9 +526,10 @@ void AudioEngine::processNode (RenderGraph& g, TrackNode& n, const BlockTime& t,
         runPlugins (n.midiFx, n.work, n.midi, ns);
         if (n.kind == TrackKind::Midi) {
             // No sound of its own: hand the processed MIDI to the target track (processed after us).
-            if (n.midiTargetIndex >= 0 && n.midiTargetIndex < (int) g.nodes.size())
-                for (const auto meta : n.midi)
-                    g.nodes[(size_t) n.midiTargetIndex].routedMidi.addEvent (meta.data, meta.numBytes, std::clamp (meta.samplePosition, 0, ns - 1));
+            for (const int ti : n.midiTargetIndices)
+                if (ti >= 0 && ti < (int) g.nodes.size())
+                    for (const auto meta : n.midi)
+                        g.nodes[(size_t) ti].routedMidi.addEvent (meta.data, meta.numBytes, std::clamp (meta.samplePosition, 0, ns - 1));
             n.work.clear (0, ns);
             rt.peakL.store (0); rt.peakR.store (0);
             meterStore (rt.inputPeak, n.midi.isEmpty() ? 0.0f : 1.0f);

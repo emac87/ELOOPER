@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 // Session document. Owned and mutated ONLY on the message thread, via EngineController.
 // Anything the audio thread needs lives in the shared *Rt objects (atomics / RtPtr).
 #include <JuceHeader.h>
@@ -99,7 +100,8 @@ struct TrackModel {
     juce::String midiInputDevice;   // device identifier; empty = all devices
     int midiChannel = 0;            // 0 = omni, 1..16
     Id recordSource = kInvalidId;   // resample: record another track's output (used by bounce)
-    Id midiTarget = kInvalidId;     // MIDI tracks: the Instrument / MIDI track their MIDI output plays ("MIDI To")
+    std::vector<Id> midiTargets;    // MIDI tracks: the Instrument / MIDI tracks their MIDI output plays ("MIDI To"), any number
+    bool playsMidiOn (Id x) const { return std::find (midiTargets.begin(), midiTargets.end(), x) != midiTargets.end(); }
 
     // Processing chain:  [MIDI FX] -> [instrument] -> input gain -> loops + monitored input
     //                    -> pre-fader inserts -> graphic EQ -> fader / pan -> post-fader inserts
