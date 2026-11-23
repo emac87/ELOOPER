@@ -133,6 +133,9 @@ public:
         const auto& list = chainOf (*t, chain);
         count = (int) list.size();
         colour = t->colour;
+        // Say which plug-in is on the chain: its name, plus "+N" when there are more.
+        firstName.clear();
+        for (auto& p : list) if (p) { firstName = p->name(); break; }
         juce::String tip = chain == FxChain::Pre ? "Pre FX (before the fader)" : chain == FxChain::Post ? "Post FX (after the fader)"
                                                  : t->kind == TrackKind::Midi ? "MIDI FX (their MIDI goes to the MIDI To track)" : "MIDI FX (before the instrument)";
         if (count == 0) tip << ": empty, click to add a plug-in";
@@ -165,9 +168,18 @@ public:
         g.drawRoundedRectangle (b, 4.0f, 1.0f);
         g.setColour (open ? juce::Colours::white : count > 0 ? theme::text : theme::textDim);
         g.setFont (theme::font (11.0f, count > 0));
-        juce::String text = chainName (chain);
-        if (count > 1) text << " " << count;
-        g.drawFittedText (text, getLocalBounds().reduced (2, 0), juce::Justification::centred, 1, 0.8f);
+        if (count > 0 && firstName.isNotEmpty()) {
+            // The plug-in's name instead of "Pre FX" (the tooltip still says which chain and lists them all).
+            auto r = getLocalBounds().reduced (3, 0);
+            if (count > 1) {
+                const juce::String more = "+" + juce::String (count - 1);
+                const int mw = juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), more) + 3;
+                g.drawText (more, r.removeFromRight (mw), juce::Justification::centredRight, false);
+            }
+            g.drawText (firstName, r, juce::Justification::centred, true);   // "..." when it doesn't fit
+        } else {
+            g.drawFittedText (chainName (chain), getLocalBounds().reduced (2, 0), juce::Justification::centred, 1, 0.8f);
+        }
     }
 
     void mouseDown (const juce::MouseEvent&) override { selection.select (trackId); }
@@ -186,6 +198,7 @@ private:
     int count = 0;
     bool open = false;
     juce::Colour colour;
+    juce::String firstName;   // first plug-in on the chain (shown on the button)
 };
 
 // ---- monitor: Auto / On / Off -------------------------------------------------------------------------
